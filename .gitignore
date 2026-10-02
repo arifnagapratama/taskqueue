@@ -1,1 +1,3 @@
 temp/
+webui/node_modules/
+webui/dist/
