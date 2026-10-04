@@ -1,3 +1,8 @@
 temp/
 webui/node_modules/
 webui/dist/
+.venv/
+data/
+__pycache__/
+.pytest_cache/
+*.pyc

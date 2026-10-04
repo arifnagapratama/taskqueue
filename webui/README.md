@@ -1,5 +1,9 @@
-# Task Queue frontend prototype
+# Task Queue frontend
 
-This is a Svelte + Vite app. From this directory, run `npm install` once and then `npm run dev`. `npm run build` creates the static production build in `dist/`.
+Svelte + Vite UI. Run `npm ci` then `npm run dev` here. Start the FastAPI
+backend separately from the repository root with
+`uv run uvicorn backend.main:app --port 8080 --reload`.
+Vite proxies `/api` requests to that backend. `npm run build` creates `dist/`.
 
-The UI uses bundled sample data because MCP and the backend are not connected yet. Changes are saved in browser `localStorage` under `task-queue-demo-v1`; remove that key in browser storage to restore the sample data. MCP supplies and creates tasks; the UI is for tracking status, priority, acceptance tests, and Epic/ADR links.
+Tasks and project data are stored in SQLite through REST; theme preferences stay
+in browser storage. Deployment, MCP tools and backend instructions: [../README.md](../README.md).

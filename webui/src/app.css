@@ -156,11 +156,15 @@ tr:focus-visible {
   position: relative;
   display: inline-grid;
   place-items: center;
+  flex: 0 0 14px;
   width: 14px;
   height: 14px;
+  padding: 0;
   border: 1px solid var(--tx2);
   border-radius: 50%;
+  background: transparent;
   color: var(--tx2);
+  font: inherit;
   font-size: 10px;
   line-height: 1;
   cursor: help;
@@ -1114,3 +1118,5 @@ kbd {
   outline: 2px solid var(--blue);
   outline-offset: -2px;
 }
+
+.backend-message { padding: 10px 16px; background: var(--bg); color: var(--tx); display: flex; gap: 10px; align-items: center; }

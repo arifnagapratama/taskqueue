@@ -1,0 +1,12 @@
+name: task-queue
+services:
+  task-queue:
+    build: .
+    image: task-queue:local
+    ports:
+      - "8080:8080"
+    volumes:
+      - task-queue-data:/data
+    restart: unless-stopped
+volumes:
+  task-queue-data:

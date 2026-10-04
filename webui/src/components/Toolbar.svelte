@@ -1,6 +1,11 @@
 <script>
   import { ADR_STATUS, EPIC_STATUS } from "../lib/helpers.js";
 
+  export let projects = [];
+  export let projectId = '';
+  export let busy = false;
+  export let onproject = () => {};
+  export let oncreateproject = () => {};
   export let view = "specs";
   export let query = "";
   export let stage = "all";
@@ -24,9 +29,10 @@
 
 <div class="bar">
   <span class="brand">Task<b>Queue</b></span><span class="sep"></span>
-  <select class="btn" aria-label="Project">
-    <option>bancakan-portal</option><option>packem-api</option>
-  </select><span class="sep"></span>
+  <select class="btn" aria-label="Project" value={projectId} disabled={busy} onchange={(event) => onproject(event.currentTarget.value)}>
+    {#each projects as project}<option value={project.id}>{project.name}</option>{/each}
+  </select>
+  <button class="btn" disabled={busy} onclick={oncreateproject}>+ Project</button><span class="sep"></span>
   <div class="tabs" role="tablist" aria-label="Views">
     {#each [["specs", "Tasks"], ["epics", "Epics"], ["adrs", "ADRs"]] as [key, label]}
       <button
@@ -78,7 +84,7 @@
 </div>
 <div class="filter">
   <span class="lbl">Filter</span>
-  <span class="filter-help" tabindex="0" aria-label={filterHelp} data-tooltip={filterHelp}>?</span>
+  <button class="filter-help" type="button" aria-label={filterHelp} data-tooltip={filterHelp}>?</button>
   <input
     class="mono"
     aria-label="Filter"

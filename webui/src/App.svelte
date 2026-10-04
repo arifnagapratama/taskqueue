@@ -4,33 +4,78 @@
   import SpecTable from './components/SpecTable.svelte';
   import EntityTables from './components/EntityTables.svelte';
   import DetailPanel from './components/DetailPanel.svelte';
-  import { createDemoData } from './lib/data.js';
   import { ADR_STATUS, blocked, matchesEntity, matchesSpec } from './lib/helpers.js';
 
-  const STORAGE_KEY = 'task-queue-demo-v1';
-  const initial = loadData();
-  let specs = initial.specs;
-  let epics = initial.epics;
-  let adrs = initial.adrs;
+  let specs = [];
+  let epics = [];
+  let adrs = [];
+  let projects = [];
+  let projectId = '';
+  let revision = 0;
+  let loading = true;
+  let saving = false;
+  let error = '';
+  let failedSnapshot = null;
+  let saveQueue = Promise.resolve();
   let view = 'specs';
-  let selectedId = 'TASK-12';
+  let selectedId = null;
   let query = '';
   let stage = 'all';
   let statusFilter = 'all';
   let collapsed = {};
   let theme = localStorageSafe('get');
 
-  function loadData() {
-    const demo = createDemoData();
+  async function request(path, options = {}) {
+    const response = await fetch(path, {
+      ...options, headers: { 'Content-Type': 'application/json' },
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+    return body;
+  }
+
+  async function loadProject(id) {
+    if (saving || failedSnapshot) return;
+    loading = true;
+    error = '';
     try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem('spec-queue-demo-v1'));
-      if (saved && Array.isArray(saved.specs) && Array.isArray(saved.epics) && Array.isArray(saved.adrs)) {
-        return { specs: saved.specs, epics: saved.epics, adrs: saved.adrs };
-      }
-    } catch {
-      // Start with the bundled example data if browser storage is empty or invalid.
+      const state = await request(`/api/projects/${encodeURIComponent(id)}/state`);
+      projectId = id;
+      revision = state.revision;
+      specs = state.specs;
+      epics = state.epics;
+      adrs = state.adrs;
+      selectedId = null;
+      collapsed = {};
+    } catch (reason) {
+      error = reason.message;
+    } finally {
+      loading = false;
     }
-    return demo;
+  }
+
+  async function initialize() {
+    try {
+      projects = await request('/api/projects');
+      await loadProject(projects[0].id);
+    } catch (reason) {
+      loading = false;
+      error = reason.message;
+    }
+  }
+
+  async function createProject() {
+    const name = window.prompt('Project name');
+    if (!name?.trim()) return;
+    try {
+      const project = await request('/api/projects', {
+        method: 'POST', body: JSON.stringify({ id: crypto.randomUUID(), name: name.trim() }),
+      });
+      projects = [...projects, project];
+      await loadProject(project.id);
+    } catch (reason) {
+      error = reason.message;
+    }
   }
 
   function localStorageSafe(action, value) {
@@ -44,11 +89,32 @@
   }
 
   function persist() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ specs, epics, adrs }));
-    } catch {
-      // Keep the current session usable if storage is unavailable.
-    }
+    const snapshot = JSON.stringify({ specs, epics, adrs });
+    const id = projectId;
+    saving = true;
+    saveQueue = saveQueue.then(async () => {
+      if (failedSnapshot) {
+        failedSnapshot = snapshot;
+        return;
+      }
+      try {
+        const result = await request(`/api/projects/${encodeURIComponent(id)}/state`, {
+          method: 'PUT', body: JSON.stringify({ ...JSON.parse(snapshot), revision }),
+        });
+        revision = result.revision;
+        error = '';
+      } catch (reason) {
+        failedSnapshot = snapshot;
+        error = reason.message;
+      }
+    });
+    const currentQueue = saveQueue;
+    currentQueue.then(() => { if (saveQueue === currentQueue) saving = false; });
+  }
+
+  function retrySave() {
+    failedSnapshot = null;
+    persist();
   }
 
   function refresh() {
@@ -113,8 +179,10 @@
   }
 
   onMount(() => {
+    initialize();
     if (theme) document.documentElement.dataset.theme = theme;
     const handleKey = (event) => {
+      if (loading || failedSnapshot) return;
       if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '')) {
         if (event.key === 'Escape') document.activeElement.blur();
         return;
@@ -144,6 +212,8 @@
 
 <Toolbar
   {view} {query} {stage} {statusFilter} {counts}
+  {projects} {projectId} busy={loading || saving || !!failedSnapshot}
+  onproject={loadProject} oncreateproject={createProject}
   onview={changeView}
   onquery={(value) => query = value}
   onstage={(value) => stage = value}
@@ -151,7 +221,17 @@
   ontoggleTheme={toggleTheme}
 />
 
-<div class="main">
+{#if error}
+  <div class="backend-message" role="alert">{error}
+    {#if failedSnapshot}<button class="btn" onclick={retrySave}>Retry save</button><span>Unsaved changes retained. For a revision conflict, copy your edits before reloading.</span>
+    {:else}<button class="btn" onclick={initialize}>Retry connection</button>{/if}
+  </div>
+{/if}
+{#if loading}<div class="backend-message" role="status">Loading project…</div>{/if}
+{#if !loading && projectId && !specs.length && !epics.length && !adrs.length}
+  <div class="backend-message">This project is empty. Create entities through the API.</div>
+{/if}
+<div class="main" inert={loading || !!failedSnapshot}>
   <div class="list">
     {#if view === 'specs'}
       <SpecTable
@@ -168,6 +248,6 @@
 </div>
 
 <div class="status mono">
-  <span>{view === 'specs' ? statusText : view === 'epics' ? `Open ${epics.filter((item) => item.s === 'open').length} · Closed ${epics.filter((item) => item.s === 'closed').length} · Showing ${visibleEpics.length}/${epics.length}` : `${ADR_STATUS.map((status) => `${status} ${adrs.filter((item) => item.s === status).length}`).join(' · ')} · Showing ${visibleAdrs.length}/${adrs.length}`}</span>
-  <span class="sp"></span><span><kbd>j</kbd><kbd>k</kbd> select</span><span><kbd>Alt</kbd>+<kbd>↑↓</kbd> priority</span><span><kbd>Esc</kbd> close</span><span>MCP: frontend demo</span>
+  <span>{view === 'specs' ? statusText : view === 'epics' ? `Open ${epics.filter((item) => item.s === 'OPEN').length} · Closed ${epics.filter((item) => item.s === 'CLOSED').length} · Showing ${visibleEpics.length}/${epics.length}` : `${ADR_STATUS.map((status) => `${status} ${adrs.filter((item) => item.s === status).length}`).join(' · ')} · Showing ${visibleAdrs.length}/${adrs.length}`}</span>
+  <span class="sp"></span><span><kbd>j</kbd><kbd>k</kbd> select</span><span><kbd>Alt</kbd>+<kbd>↑↓</kbd> priority</span><span><kbd>Esc</kbd> close</span><span role="status">{saving ? 'Saving…' : failedSnapshot ? 'Unsaved changes' : 'SQLite'}</span>
 </div>
