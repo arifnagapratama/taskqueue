@@ -1,10 +1,11 @@
 """FastAPI application with shared REST, MCP and frontend hosting."""
 import os
 import sqlite3
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -23,6 +24,22 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Task Queue", lifespan=lifespan)
+subscribers = {}
+subscriber_loop = None
+
+
+def broadcast_change(project_id, revision):
+    if subscriber_loop is None:
+        return
+    def deliver():
+        for queue in tuple(subscribers.get(project_id, ())):
+            if queue.full():
+                queue.get_nowait()
+            queue.put_nowait({"project_id": project_id, "revision": revision})
+    subscriber_loop.call_soon_threadsafe(deliver)
+
+
+store.add_change_listener(broadcast_change)
 
 
 @app.exception_handler(store.StoreError)
@@ -80,6 +97,30 @@ def get_state(project_id: str):
 @app.put("/api/projects/{project_id}/state")
 def put_state(project_id: str, body: dict):
     return store.put_state(project_id, body)
+
+
+@app.websocket("/api/events")
+async def project_events(websocket: WebSocket):
+    global subscriber_loop
+    project_id = websocket.query_params.get("project_id", "")
+    await websocket.accept()
+    if not project_id:
+        await websocket.close(code=1008)
+        return
+    subscriber_loop = asyncio.get_running_loop()
+    queue = asyncio.Queue(maxsize=1)
+    subscribers.setdefault(project_id, set()).add(queue)
+    try:
+        while True:
+            await websocket.send_json(await queue.get())
+    except WebSocketDisconnect:
+        pass
+    finally:
+        project_subscribers = subscribers.get(project_id)
+        if project_subscribers:
+            project_subscribers.discard(queue)
+            if not project_subscribers:
+                subscribers.pop(project_id, None)
 
 
 app.mount("/mcp", mcp_app)

@@ -1,8 +1,5 @@
 <script>
-  import { tick } from "svelte";
-  import MarkdownIt from "markdown-it";
-  import DOMPurify from "dompurify";
-  import hljs from "highlight.js/lib/common";
+  import { onMount, tick } from "svelte";
   import { renderMermaid } from "../lib/mermaid.js";
 
   export let value = "";
@@ -15,37 +12,52 @@
   let expandedSource = "";
   let fullscreenContainer;
   let expandedRenderId = 0;
-  const markdown = new MarkdownIt({
-    html: false,
-    linkify: true,
-    breaks: false,
-    highlight(code, language) {
-      if (language === "mermaid") return "";
-      if (language && hljs.getLanguage(language)) {
-        try {
-          return hljs.highlight(code, { language }).value;
-        } catch {
-          /* Use escaped source below. */
+  let markdown;
+  let DOMPurify;
+  let hljs;
+
+  onMount(async () => {
+    const [markdownModule, purifierModule, highlightModule] = await Promise.all([
+      import("markdown-it"),
+      import("dompurify"),
+      import("highlight.js/lib/common"),
+    ]);
+    const MarkdownIt = markdownModule.default;
+    DOMPurify = purifierModule.default;
+    hljs = highlightModule.default;
+    markdown = new MarkdownIt({
+      html: false,
+      linkify: true,
+      breaks: false,
+      highlight(code, language) {
+        if (language === "mermaid") return "";
+        if (language && hljs.getLanguage(language)) {
+          try {
+            return hljs.highlight(code, { language }).value;
+          } catch {
+            /* Use escaped source below. */
+          }
         }
+        return "";
+      },
+    });
+    markdown.renderer.rules.fence = (tokens, index, options, env) => {
+      const token = tokens[index];
+      const language = token.info.trim().split(/\s+/)[0];
+      if (language === "mermaid") {
+        const diagramIndex = env.diagrams.push(token.content) - 1;
+        return `<div class="mermaid" data-diagram-index="${diagramIndex}"></div>`;
       }
-      return "";
-    },
+      const highlighted = markdown.options.highlight(token.content, language);
+      const code = highlighted || markdown.utils.escapeHtml(token.content);
+      const className = language
+        ? ` class="language-${markdown.utils.escapeHtml(language)}"`
+        : "";
+      return `<pre><code${className}>${code}</code></pre>`;
+    };
   });
-  markdown.renderer.rules.fence = (tokens, index, options, env) => {
-    const token = tokens[index];
-    const language = token.info.trim().split(/\s+/)[0];
-    if (language === "mermaid") {
-      const diagramIndex = env.diagrams.push(token.content) - 1;
-      return `<div class="mermaid" data-diagram-index="${diagramIndex}"></div>`;
-    }
-    const highlighted = markdown.options.highlight(token.content, language);
-    const code = highlighted || markdown.utils.escapeHtml(token.content);
-    const className = language
-      ? ` class="language-${markdown.utils.escapeHtml(language)}"`
-      : "";
-    return `<pre><code${className}>${code}</code></pre>`;
-  };
   function renderMarkdown(source) {
+    if (!markdown || !DOMPurify) return { html: "", diagrams: [] };
     const env = { diagrams: [] };
     const html = DOMPurify.sanitize(markdown.render(source || "", env), {
       ADD_ATTR: ["target", "rel", "data-diagram-index"],

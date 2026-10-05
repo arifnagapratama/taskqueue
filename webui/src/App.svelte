@@ -24,6 +24,40 @@
   let statusFilter = 'all';
   let collapsed = {};
   let theme = localStorageSafe('get');
+  let socket = null;
+  let refreshPending = false;
+
+  function projectFromHash() {
+    return new URLSearchParams(location.hash.slice(1)).get('project');
+  }
+
+  function setProjectHash(id) {
+    if (projectFromHash() === id) return;
+    const params = new URLSearchParams(location.hash.slice(1));
+    params.set('project', id);
+    history.replaceState(null, '', `${location.pathname}${location.search}#${params}`);
+  }
+
+  function connectProjectEvents(id) {
+    socket?.close();
+    if (!id) return;
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const connection = new WebSocket(`${protocol}//${location.host}/api/events?project_id=${encodeURIComponent(id)}`);
+    socket = connection;
+    connection.onmessage = (event) => {
+      const change = JSON.parse(event.data);
+      if (change.project_id !== projectId || change.revision <= revision) return;
+      if (saving || failedSnapshot) refreshPending = true;
+      else reloadCurrentProject();
+    };
+    connection.onclose = () => {
+      if (socket === connection && projectId === id) {
+        window.setTimeout(() => {
+          if (socket === connection && projectId === id) connectProjectEvents(id);
+        }, 1000);
+      }
+    };
+  }
 
   async function request(path, options = {}) {
     const response = await fetch(path, {
@@ -41,6 +75,8 @@
     try {
       const state = await request(`/api/projects/${encodeURIComponent(id)}/state`);
       projectId = id;
+      setProjectHash(id);
+      connectProjectEvents(id);
       revision = state.revision;
       specs = state.specs;
       epics = state.epics;
@@ -57,9 +93,31 @@
   async function initialize() {
     try {
       projects = await request('/api/projects');
-      await loadProject(projects[0].id);
+      const wanted = projectFromHash();
+      await loadProject(projects.some((project) => project.id === wanted) ? wanted : projects[0].id);
     } catch (reason) {
       loading = false;
+      error = reason.message;
+    }
+  }
+
+  async function reloadCurrentProject() {
+    if (!projectId || saving || failedSnapshot) {
+      refreshPending = true;
+      return;
+    }
+    const id = projectId;
+    try {
+      const state = await request(`/api/projects/${encodeURIComponent(id)}/state`);
+      if (projectId !== id || state.revision <= revision) return;
+      revision = state.revision;
+      specs = state.specs;
+      epics = state.epics;
+      adrs = state.adrs;
+      if (selectedId && ![...specs, ...epics, ...adrs].some((item) => item.id === selectedId)) selectedId = null;
+      refreshPending = false;
+      error = '';
+    } catch (reason) {
       error = reason.message;
     }
   }
@@ -109,7 +167,11 @@
       }
     });
     const currentQueue = saveQueue;
-    currentQueue.then(() => { if (saveQueue === currentQueue) saving = false; });
+    currentQueue.then(async () => {
+      if (saveQueue !== currentQueue) return;
+      saving = false;
+      if (refreshPending && !failedSnapshot) await reloadCurrentProject();
+    });
   }
 
   function retrySave() {
@@ -204,7 +266,16 @@
       }
     };
     document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
+    const onHashChange = () => {
+      const id = projectFromHash();
+      if (id && projects.some((project) => project.id === id) && id !== projectId) loadProject(id);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      window.removeEventListener('hashchange', onHashChange);
+      socket?.close();
+    };
   });
 </script>
 

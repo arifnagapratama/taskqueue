@@ -8,6 +8,16 @@ from pathlib import Path
 DB_PATH = Path(os.environ.get("DATABASE_PATH", "data/task-queue.sqlite3"))
 STATIC_PATH = os.environ.get("STATIC_PATH", "/app/dist")
 KINDS = ("specs", "epics", "adrs")
+_change_listeners = set()
+
+
+def add_change_listener(listener):
+    _change_listeners.add(listener)
+
+
+def notify_changed(project_id, revision):
+    for listener in tuple(_change_listeners):
+        listener(project_id, revision)
 
 
 def connect():
@@ -144,13 +154,16 @@ def write_state(db, project_id, state):
             (project_id, kind, item["id"], i, json.dumps(item)) for i, item in enumerate(state[kind])
         ])
     db.execute("UPDATE projects SET revision=revision+1 WHERE id=?", (project_id,))
-    return {"revision": current["revision"] + 1}
+    revision = current["revision"] + 1
+    return {"revision": revision}
 
 
 def put_state(project_id, state):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
-        return write_state(db, project_id, state)
+        result = write_state(db, project_id, state)
+    notify_changed(project_id, result["revision"])
+    return result
 
 
 def mutate(project_id, operation):
@@ -159,4 +172,5 @@ def mutate(project_id, operation):
         state = read_state(db, project_id)
         result = operation(state)
         revision = write_state(db, project_id, state)
-        return {**revision, "result": result}
+    notify_changed(project_id, revision["revision"])
+    return {**revision, "result": result}
