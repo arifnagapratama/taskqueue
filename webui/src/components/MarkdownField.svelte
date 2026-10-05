@@ -56,15 +56,15 @@
       return `<pre><code${className}>${code}</code></pre>`;
     };
   });
-  function renderMarkdown(source) {
-    if (!markdown || !DOMPurify) return { html: "", diagrams: [] };
+  function renderMarkdown(source, parser, purifier) {
+    if (!parser || !purifier) return { html: "", diagrams: [] };
     const env = { diagrams: [] };
-    const html = DOMPurify.sanitize(markdown.render(source || "", env), {
+    const html = purifier.sanitize(parser.render(source || "", env), {
       ADD_ATTR: ["target", "rel", "data-diagram-index"],
     });
     return { html, diagrams: env.diagrams };
   }
-  $: rendered = renderMarkdown(value);
+  $: rendered = renderMarkdown(value, markdown, DOMPurify);
   $: html = rendered.html;
   $: rendered, theme, editing, renderDiagrams();
   $: expandedSource, theme, fullscreenContainer, renderExpandedDiagram();
