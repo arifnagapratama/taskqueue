@@ -63,15 +63,15 @@ docker compose pull
 docker compose up -d
 ```
 
-Initialization creates one random token, a private key, and a self-signed PEM
-certificate in `deploy/private/`. Existing files are preserved on subsequent
+Initialization creates one random token, a local CA (`ca.crt`, `ca.key`) and a signed HTTPS certificate/key
+(`server.crt`, `server.key`) in `deploy/private/`. Existing files are preserved on subsequent
 runs. The certificate has the configured IP as its SAN and expires after 365
 days. The token is readable by container UID 10001; initialization requires root
 to set that ownership. `.env`, private files, and backups are ignored by Git
 and excluded from the application image build context.
 
 Open `https://IP_SERVER:5443/` and enter the token from `deploy/private/token`.
-Trust `deploy/private/server.crt` in the browser/OS before accessing the site.
+Trust `deploy/private/ca.crt` in the browser/OS before accessing the site.
 REST and MCP requests require `x-api-token`; the UI shell remains available to
 present the login screen. MCP endpoint: `https://IP_SERVER:5443/mcp/`.
 Nginx terminates HTTPS and forwards REST, MCP streams, and WebSocket events.
@@ -83,8 +83,10 @@ preserving its owner and permissions. The application reads the file for each
 request. Mounting the containing directory also supports atomic file replacement.
 Users must enter the new token and MCP clients must restart with the new value.
 For certificate renewal or an IP change, stop Compose, archive the existing
-certificate/key, remove the pair, rerun initialization, then start Compose and
-redistribute the new public certificate. Keep private keys on the server.
+server certificate/key, move the server pair out of `deploy/private`, rerun
+initialization, then start Compose. The CA is retained, so clients keep trusting
+`ca.crt`. When replacing the CA itself, redistribute the new `ca.crt`. Keep
+`ca.key` and `server.key` on the server; never copy them to clients.
 
 Set `TASKQUEUE_TAG` in `.env` to the published version (default `latest`).
 To update, run `docker compose pull` followed by `docker compose up -d`.
@@ -106,7 +108,7 @@ and trust the copied public certificate:
 
 ```sh
 export TASKQUEUE_TOKEN="$(cat /absolute/path/taskqueue-token)"
-export TASKQUEUE_CERTS=/absolute/path/server.crt
+export TASKQUEUE_CERTS=/absolute/path/ca.crt
 export CODEX_CA_CERTIFICATE="$TASKQUEUE_CERTS"
 codex
 ```
@@ -234,3 +236,29 @@ reload the latest state and reapply. Browser demo data is not imported automatic
 Run one container per local SQLite volume. Back up with SQLite's online backup
 API or stop the container and copy the complete volume including WAL files.
 Set `TASKQUEUE_TOKEN_FILE` to enable token authentication. Without it, local development remains unauthenticated; use only a trusted development environment.
+
+### Upgrade from the legacy self-signed server certificate
+
+The old generator could produce `server.crt` with `CA:TRUE`. Rustls rejects
+that certificate as an HTTPS end entity (`CaUsedAsEndEntity`). Update
+`scripts/init-deploy.py`, then run from the deployment directory:
+
+```sh
+docker compose stop https
+sudo mkdir -p deploy/legacy-tls
+sudo mv deploy/private/server.crt deploy/private/server.key deploy/legacy-tls/
+sudo python3 scripts/init-deploy.py
+docker compose up -d https
+```
+
+Keep the existing token and database. Copy only `deploy/private/ca.crt` to
+clients, trust it in the browser/OS, update `TASKQUEUE_CERTS` to that file, and
+restart Codex. The server continues serving `server.crt`; clients trust `ca.crt`.
+
+If CA inspection prints duplicate `Basic Constraints` or `Subject Key Identifier`
+extensions, regenerate both CA and server pairs using the latest initializer.
+Older OpenSSL configurations could contribute default extensions alongside
+`-addext`. The updated initializer uses an explicit request configuration.
+Stop HTTPS, archive `ca.crt`, `ca.key`, `server.crt`, and `server.key` outside
+`deploy/private`, and rerun initialization. Preserve `token`. Restart HTTPS and
+redistribute the new `ca.crt` to all clients.
