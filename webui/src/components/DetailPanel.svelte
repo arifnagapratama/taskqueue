@@ -1,4 +1,7 @@
 <script>
+  import Button from "../design-system/Button.svelte";
+  import Badge from "../design-system/Badge.svelte";
+  import Icon from "./Icon.svelte";
   import { onMount } from "svelte";
   import {
     ADR_STATUS,
@@ -203,14 +206,14 @@
   <aside class="side open" class:fullscreen aria-label="{view} detail">
     <div class="sh">
       <span class="id mono">{item.id}</span><span class="sp"></span>
-      <button
+      <Button
         class="btn"
         aria-label={fullscreen ? "Exit fullscreen detail" : "Expand detail fullscreen"}
         title={fullscreen ? "Exit fullscreen (Esc)" : "Expand fullscreen"}
         aria-pressed={fullscreen}
         onclick={() => fullscreen = !fullscreen}
-      >{fullscreen ? "↙" : "⛶"}</button>
-      <button class="btn" aria-label="Close" onclick={onclose}>✕</button>
+      ><Icon name={fullscreen ? "fullscreen_exit" : "fullscreen"} /></Button>
+      <Button class="btn" aria-label="Close" onclick={onclose}><Icon name="close" /></Button>
     </div>
 
     {#if view === "specs"}
@@ -228,17 +231,17 @@
         </div>
       {/if}
       {#if blockedBy.length}<div class="blkb" role="status">
-          ⛔ Blocked until {blockedBy.join(", ")} is accepted. AI agents cannot claim
+          <Icon name="block" /> Blocked until {blockedBy.join(", ")} is accepted. AI agents cannot claim
           this task.
         </div>{/if}
       <div class="sb">
         <div class="sec">
-          <input
+          <textarea rows="2"
             class="title"
             aria-label="Title"
-            value={item.t}
+            bind:value={item.t}
             onchange={updateTitle}
-          />
+          ></textarea>
           <div class="kv">
             <span>Status</span><select
               value={item.s}
@@ -271,15 +274,15 @@
           >
           <span>ADRs</span>
           <div class="chips">
-            {#each item.adrs as id}<button
+            {#each item.adrs as id}<Button variant="unstyled"
                 type="button"
                 class="chip c-{adrs.find((adr) => adr.id === id)?.s.toLowerCase() || ''}"
-                onclick={() => ongo(id)}>{id}</button
-              ><button
+                onclick={() => ongo(id)}>{id}</Button
+              ><Button variant="unstyled"
                 type="button"
                 class="rm cx"
                 aria-label="Remove {id}"
-                onclick={() => removeAdr(id)}>✕</button
+                onclick={() => removeAdr(id)}><Icon name="close" /></Button
               >{/each}
             <select aria-label="Link ADR" onchange={addAdr}
               ><option value="">+ link ADR</option
@@ -290,15 +293,15 @@
           </div>
           <span>Blocked by</span>
           <div class="chips">
-            {#each item.bl as id}<button
+            {#each item.bl as id}<Button variant="unstyled"
                 type="button"
                 class="chip c-{adrs.find((adr) => adr.id === id)?.s.toLowerCase() || ''}"
-                onclick={() => ongo(id)}>{id}</button
-              ><button
+                onclick={() => ongo(id)}>{id}</Button
+              ><Button variant="unstyled"
                 type="button"
                 class="rm cx"
                 aria-label="Remove blocker {id}"
-                onclick={() => removeBlock(id)}>✕</button
+                onclick={() => removeBlock(id)}><Icon name="close" /></Button
               >{/each}
             <select aria-label="Add blocker" onchange={addBlock}
               ><option value="">+ block on ADR</option
@@ -321,17 +324,17 @@
           />
         </div>
         <h3 class="cl">
-          <button
+          <Button variant="unstyled"
             type="button"
             aria-expanded={openTests}
             onclick={() => (openTests = !openTests)}
-            ><i class="chev">{openTests ? "▾" : "▸"}</i> Acceptance tests ({item.ac.filter(
+            ><i class="chev"><Icon name={openTests ? "expand_more" : "chevron_right"} /></i> Acceptance tests ({item.ac.filter(
               (test) => test.st === "pass",
             ).length}/{item.ac.length} passing{item.ac.some(
               (test) => test.st === "fail",
             )
               ? ` · ${item.ac.filter((test) => test.st === "fail").length} failing`
-              : ""})</button
+              : ""})</Button
           >
         </h3>
         {#if openTests}<div class="sec">
@@ -352,15 +355,11 @@
                     (e.key === "Enter" || e.key === " ") &&
                     (test.open = !(test.open ?? test.st === "fail"))}
                 >
-                  <i class="ico"
-                    >{test.st === "pass"
-                      ? "✓"
-                      : test.st === "fail"
-                        ? "✕"
-                        : "·"}</i
+                  <i class="ico" role="img" aria-label={test.st === "pass" ? "Passed" : test.st === "fail" ? "Failed" : "Pending"}
+                    ><Icon name={test.st === "pass" ? "check_circle" : test.st === "fail" ? "cancel" : "radio_button_unchecked"} /></i
                   ><span class="ti">{test.t}</span><span class="mode"
                     >{test.mode}</span
-                  ><i class="chev">{test.open ? "▾" : "▸"}</i>
+                  ><i class="chev"><Icon name={test.open ? "expand_more" : "chevron_right"} /></i>
                 </div>
                 {#if test.open ?? test.st === "fail"}<div class="atb">
                     <ul class="gh">
@@ -371,20 +370,20 @@
                       >{#if test.run}<span>Last run: {fmt(test.run)}</span>{/if}
                     </div>
                     <div class="ata">
-                      <button
+                      <Button
                         class="btn"
-                        onclick={() => setTestState(test, "pass")}>Pass</button
-                      ><button
+                        onclick={() => setTestState(test, "pass")}>Pass</Button
+                      ><Button
                         class="btn"
-                        onclick={() => setTestState(test, "fail")}>Fail</button
-                      ><button
+                        onclick={() => setTestState(test, "fail")}>Fail</Button
+                      ><Button
                         class="btn"
                         onclick={() => setTestState(test, "pending")}
-                        >Reset</button
-                      ><button
+                        >Reset</Button
+                      ><Button variant="unstyled"
                         class="rm"
                         aria-label="Remove test"
-                        onclick={() => removeTest(index)}>✕</button
+                        onclick={() => removeTest(index)}><Icon name="close" /></Button
                       >
                     </div>
                   </div>{/if}
@@ -415,26 +414,26 @@
                   />
                 </div>
                 <div class="r">
-                  <button class="btn pri" onclick={addTest}>Add test</button
-                  ><button class="btn" onclick={() => (addingTest = false)}
-                    >Cancel</button
+                  <Button variant="primary" class="btn pri" onclick={addTest}>Add test</Button
+                  ><Button class="btn" onclick={() => (addingTest = false)}
+                    >Cancel</Button
                   ><span class="lbl" style="align-self:center"
                     >Ctrl+Enter adds</span
                   >
                 </div>
-              </div>{:else}<button
+              </div>{:else}<Button
                 class="btn"
                 style="margin-top:4px"
-                onclick={() => (addingTest = true)}>+ Test</button
+                onclick={() => (addingTest = true)}>+ Test</Button
               >{/if}
           </div>{/if}
         <h3 class="cl">
-          <button
+          <Button variant="unstyled"
             type="button"
             aria-expanded={openHistory}
             onclick={() => (openHistory = !openHistory)}
-            ><i class="chev">{openHistory ? "▾" : "▸"}</i> History ({item.log
-              .length})</button
+            ><i class="chev"><Icon name={openHistory ? "expand_more" : "chevron_right"} /></i> History ({item.log
+              .length})</Button
           >
         </h3>
         {#if openHistory}<div class="sec">
@@ -452,12 +451,12 @@
     {:else if view === "epics"}
       <div class="sb">
         <div class="sec">
-          <input
+          <textarea rows="2"
             class="title"
             aria-label="Title"
-            value={item.t}
+            bind:value={item.t}
             onchange={updateTitle}
-          />
+          ></textarea>
           <div class="kv">
             <span>Status</span><select
               value={item.s}
@@ -492,11 +491,11 @@
             </div>
           </div>
           <h3 class="cl">
-            <button
+            <Button variant="unstyled"
               type="button"
               aria-expanded={openEpicSpecs}
               onclick={() => (openEpicSpecs = !openEpicSpecs)}
-              ><i class="chev">{openEpicSpecs ? "▾" : "▸"}</i> Tasks ({activeSpecs.length})</button
+              ><i class="chev"><Icon name={openEpicSpecs ? "expand_more" : "chevron_right"} /></i> Tasks ({activeSpecs.length})</Button
             >
           </h3>
           {#if openEpicSpecs}<div class="sec lst">
@@ -509,25 +508,25 @@
                 >
                   <span class="mono lbl">{spec.id}</span><span class="ti"
                     >{spec.t}</span
-                  ><span class="pill p-{spec.s}">{STATUS[spec.s]}</span>
+                  ><Badge tone={spec.s === "finished" ? "success" : spec.s === "in_progress" ? "warning" : "neutral"} class="p-{spec.s}">{STATUS[spec.s]}</Badge>
                 </div>{/each}
             </div>{/if}
           {@const epicAdrs = [
             ...new Set(activeSpecs.flatMap((spec) => spec.adrs)),
           ]}
           <h3 class="cl">
-            <button
+            <Button variant="unstyled"
               type="button"
               aria-expanded={openEpicAdrs}
               onclick={() => (openEpicAdrs = !openEpicAdrs)}
-              ><i class="chev">{openEpicAdrs ? "▾" : "▸"}</i> ADRs referenced ({epicAdrs.length})</button
+              ><i class="chev"><Icon name={openEpicAdrs ? "expand_more" : "chevron_right"} /></i> ADRs referenced ({epicAdrs.length})</Button
             >
           </h3>
           {#if openEpicAdrs}<div class="sec">
-              {#each epicAdrs as id}<button
+              {#each epicAdrs as id}<Button variant="unstyled"
                   type="button"
                   class="chip"
-                  onclick={() => ongo(id)}>{id}</button
+                  onclick={() => ongo(id)}>{id}</Button
                 >{/each}
             </div>{/if}{/if}
       </div>
@@ -538,12 +537,12 @@
           : specs.filter((spec) => spec.bl.includes(item.id)).length}
       <div class="sb">
         <div class="sec">
-          <input
+          <textarea rows="2"
             class="title"
             aria-label="Title"
-            value={item.t}
+            bind:value={item.t}
             onchange={updateTitle}
-          />
+          ></textarea>
           <div class="kv">
             <span>Status</span><select
               value={item.s}
@@ -574,7 +573,7 @@
             >
           </div>
           {#if blockers}<div class="blk" style="margin:6px 0 0">
-              ⛔ Blocking {blockers} spec{blockers > 1 ? "s" : ""} until this ADR
+              <Icon name="block" /> Blocking {blockers} spec{blockers > 1 ? "s" : ""} until this ADR
               is accepted.
             </div>{/if}
         </div>
@@ -591,11 +590,11 @@
           />
         </div>
         <h3 class="cl">
-          <button
+          <Button variant="unstyled"
             type="button"
             aria-expanded={openAdrDecision}
             onclick={() => (openAdrDecision = !openAdrDecision)}
-            ><i class="chev">{openAdrDecision ? "▾" : "▸"}</i> Decision</button
+            ><i class="chev"><Icon name={openAdrDecision ? "expand_more" : "chevron_right"} /></i> Decision</Button
           >
         </h3>
         {#if openAdrDecision}<div class="sec">
@@ -610,11 +609,11 @@
             />
           </div>{/if}
         <h3 class="cl">
-          <button
+          <Button variant="unstyled"
             type="button"
             aria-expanded={openAdrConsequences}
             onclick={() => (openAdrConsequences = !openAdrConsequences)}
-            ><i class="chev">{openAdrConsequences ? "▾" : "▸"}</i> Consequences</button
+            ><i class="chev"><Icon name={openAdrConsequences ? "expand_more" : "chevron_right"} /></i> Consequences</Button
           >
         </h3>
         {#if openAdrConsequences}<div class="sec">
@@ -629,11 +628,11 @@
             />
           </div>{/if}
         <h3 class="cl">
-          <button
+          <Button variant="unstyled"
             type="button"
             aria-expanded={openAdrSpecs}
             onclick={() => (openAdrSpecs = !openAdrSpecs)}
-            ><i class="chev">{openAdrSpecs ? "▾" : "▸"}</i> Tasks ({relatedSpecs.length})</button
+            ><i class="chev"><Icon name={openAdrSpecs ? "expand_more" : "chevron_right"} /></i> Tasks ({relatedSpecs.length})</Button
           >
         </h3>
         {#if openAdrSpecs}<div class="sec lst">
@@ -646,7 +645,7 @@
               >
                 <span class="mono lbl">{spec.id}</span><span class="ti"
                   >{spec.t}</span
-                ><span class="pill p-{spec.s}">{STATUS[spec.s]}</span>
+                ><Badge tone={spec.s === "finished" ? "success" : spec.s === "in_progress" ? "warning" : "neutral"} class="p-{spec.s}">{STATUS[spec.s]}</Badge>
               </div>{/each}
           </div>{/if}
       </div>

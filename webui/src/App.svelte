@@ -1,4 +1,5 @@
 <script>
+  import Button from "./design-system/Button.svelte";
   import { onMount } from 'svelte';
   import Toolbar from './components/Toolbar.svelte';
   import SpecTable from './components/SpecTable.svelte';
@@ -342,13 +343,13 @@
     <form onsubmit={login}>
       <label for="application-token">Application token</label>
       <input id="application-token" type="password" bind:value={tokenInput} autocomplete="off" required />
-      <button class="btn" type="submit" disabled={loginBusy}>{loginBusy ? 'Signing in…' : 'Sign in'}</button>
+      <Button variant="primary" type="submit" disabled={loginBusy}>{loginBusy ? 'Signing in…' : 'Sign in'}</Button>
     </form>
     {#if error}<p role="alert">{error}</p>{/if}
     {#if failedSnapshot}<p>Unsaved changes are retained. Sign in to retry saving.</p>{/if}
   </main>
 {:else}
-{#if token}<div class="session-bar"><button class="btn" onclick={logout} disabled={saving}>Sign out</button></div>{/if}
+{#if token}<div class="session-bar"><Button variant="secondary" onclick={logout} disabled={saving}>Sign out</Button></div>{/if}
 <Toolbar
   {view} {query} {stage} {statusFilter} {counts}
   {projects} {projectId} busy={loading || saving || !!failedSnapshot}
@@ -362,8 +363,8 @@
 
 {#if error}
   <div class="backend-message" role="alert">{error}
-    {#if failedSnapshot}<button class="btn" onclick={retrySave}>Retry save</button><span>Unsaved changes retained. For a revision conflict, copy your edits before reloading.</span>
-    {:else}<button class="btn" onclick={initialize}>Retry connection</button>{/if}
+    {#if failedSnapshot}<Button variant="secondary" onclick={retrySave}>Retry save</Button><span>Unsaved changes retained. For a revision conflict, copy your edits before reloading.</span>
+    {:else}<Button variant="secondary" onclick={initialize}>Retry connection</Button>{/if}
   </div>
 {/if}
 {#if loading}<div class="backend-message" role="status">Loading project…</div>{/if}
@@ -392,10 +393,3 @@
 </div>
 
 {/if}
-
-<style>
-  .login-panel { max-width: 26rem; margin: 10vh auto; padding: 1.5rem; }
-  .login-panel form { display: grid; gap: 1rem; }
-  .login-panel input { padding: .7rem; width: 100%; box-sizing: border-box; }
-  .session-bar { display: flex; justify-content: flex-end; padding: .3rem .75rem; }
-</style>

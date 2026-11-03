@@ -1,4 +1,6 @@
 <script>
+  import Button from "../design-system/Button.svelte";
+  import Icon from "./Icon.svelte";
   import { ADR_STATUS, EPIC_STATUS } from "../lib/helpers.js";
 
   export let projects = [];
@@ -32,18 +34,17 @@
   <select class="btn" aria-label="Project" value={projectId} disabled={busy} onchange={(event) => onproject(event.currentTarget.value)}>
     {#each projects as project}<option value={project.id}>{project.name}</option>{/each}
   </select>
-  <button class="btn" disabled={busy} onclick={oncreateproject}>+ Project</button><span class="sep"></span>
+  <Button class="btn" disabled={busy} onclick={oncreateproject}><Icon name="add" /> Project</Button><span class="sep"></span>
   <div class="tabs" role="tablist" aria-label="Views">
     {#each [["specs", "Tasks"], ["epics", "Epics"], ["adrs", "ADRs"]] as [key, label]}
-      <button
-        class:on={view === key}
-        class="tab"
+      <Button variant="unstyled"
+        class={"tab" + (view === key ? " on" : "")}
         role="tab"
         aria-selected={view === key}
         onclick={() => onview(key)}
       >
         {label} <i class="n">{counts[key]}</i>
-      </button>
+      </Button>
     {/each}
   </div>
   <span class="sep"></span>
@@ -75,16 +76,16 @@
     </select>
   {/if}
   <span style="flex: 1"></span>
-  <button
+  <Button
     class="btn"
     title="Toggle theme"
     aria-label="Toggle theme"
-    onclick={ontoggleTheme}>◐</button
+    onclick={ontoggleTheme}><Icon name="contrast" /></Button
   >
 </div>
 <div class="filter">
   <span class="lbl">Filter</span>
-  <button class="filter-help" type="button" aria-label={filterHelp} data-tooltip={filterHelp}>?</button>
+  <Button variant="unstyled" class="filter-help" type="button" aria-label={filterHelp} data-tooltip={filterHelp}>?</Button>
   <input
     class="mono"
     aria-label="Filter"

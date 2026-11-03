@@ -1,4 +1,7 @@
 <script>
+  import Button from "../design-system/Button.svelte";
+  import Badge from "../design-system/Badge.svelte";
+  import Icon from "./Icon.svelte";
   import { ADR_STATUS, EPIC_STATUS, epicRollup, fmt } from "../lib/helpers.js";
 
   export let view = "epics";
@@ -31,9 +34,9 @@
 {#if view === "epics"}
   <table id="tblE">
     <colgroup
-      ><col style="width:84px" /><col /><col style="width:90px" /><col
+      ><col style="width:116px" /><col style="width:320px" /><col style="width:152px" /><col
         style="width:260px"
-      /><col style="width:100px" /><col style="width:130px" /></colgroup
+      /><col style="width:168px" /><col style="width:188px" /></colgroup
     >
     <thead
       ><tr
@@ -48,10 +51,12 @@
         <tr
           class="row"
           class:sel={selected === epic.id}
+          tabindex="0"
+          onkeydown={(event) => event.key === "Enter" && onselect(epic.id)}
           onclick={() => onselect(epic.id)}
         >
-          <td class="mono">{epic.id}</td><td title={epic.t}>{epic.t}</td><td
-            ><span class="pill p-{epic.s.toLowerCase()}">{epic.s}</span></td
+          <td class="mono" title={epic.id}>{epic.id}</td><td title={epic.t}>{epic.t}</td><td
+            ><Badge tone={epic.s === "CLOSED" ? "success" : "neutral"} class="p-{epic.s.toLowerCase()}">{epic.s}</Badge></td
           >
           <td class="mono"
             >{rollup.done} done · {rollup.active} active · {rollup.todo} todo{#if rollup.agents}<span
@@ -60,11 +65,11 @@
           >
           <td class="mono"
             >{rollup.passed}/{rollup.totalTests}{#if rollup.failed}<span
-                class="ft"
+                class="ft" aria-label={`${rollup.failed} failed tests`}
               >
-                ✕{rollup.failed}</span
+                <Icon name="close" />{rollup.failed}</span
               >{/if}</td
-          ><td class="mono lbl">{fmt(epic.u)}</td>
+          ><td class="mono lbl" title={fmt(epic.u)}>{fmt(epic.u)}</td>
         </tr>
       {/each}
     </tbody>
@@ -72,8 +77,8 @@
 {:else}
   <table id="tblA">
     <colgroup
-      ><col style="width:84px" /><col /><col style="width:100px" /><col
-        style="width:100px"
+      ><col style="width:116px" /><col style="width:320px" /><col style="width:168px" /><col
+        style="width:168px"
       /><col style="width:140px" /><col style="width:300px" /></colgroup
     >
     <thead
@@ -96,33 +101,35 @@
           class="row"
           class:s-finished={adr.s === "SUPERSEDED" || adr.s === "DEPRECATED"}
           class:sel={selected === adr.id}
+          tabindex="0"
+          onkeydown={(event) => event.key === "Enter" && onselect(adr.id)}
           onclick={() => onselect(adr.id)}
         >
-          <td class="mono">{adr.id}</td><td title={adr.t}>{adr.t}</td><td
-            ><span class="pill p-{adr.s.toLowerCase()}">{adr.s}</span></td
+          <td class="mono" title={adr.id}>{adr.id}</td><td title={adr.t}>{adr.t}</td><td
+            ><Badge tone={adr.s === "ACCEPTED" ? "success" : adr.s === "PROPOSED" ? "warning" : "neutral"} class="p-{adr.s.toLowerCase()}">{adr.s}</Badge></td
           >
           <td class="mono lbl">{fmt(adr.u).slice(0, 10)}</td><td class="mono"
             >{relatedSpecs.length}{#if blockers}<span class="blk"
-                >⛔ {blockers} blocked</span
+                ><Icon name="block" /> {blockers} blocked</span
               >{/if}</td
           >
           <td
             >{#if adr.sup}<span class="lbl">supersedes</span>
-              <button
+              <Button variant="unstyled"
                 type="button"
                 class="chip"
                 onclick={(event) => {
                   event.stopPropagation();
                   ongo(adr.sup);
-                }}>{adr.sup}</button
+                }}>{adr.sup}</Button
               >{/if}{#if successor}<span class="lbl">superseded by</span>
-              <button
+              <Button variant="unstyled"
                 type="button"
                 class="chip"
                 onclick={(event) => {
                   event.stopPropagation();
                   ongo(successor.id);
-                }}>{successor.id}</button
+                }}>{successor.id}</Button
               >{/if}</td
           >
         </tr>

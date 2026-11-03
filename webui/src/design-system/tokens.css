@@ -1,0 +1,105 @@
+/* Splunk-inspired semantic tokens. App aliases keep feature styles on one palette. */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --radius-control: 3px;
+  --radius-badge: 10px;
+  --control-height: 36px;
+  --control-height-small: 32px;
+  --font-size-body: 15px;
+  --font-size-small: 14px;
+  --primary: var(--blue);
+  --text: var(--tx);
+  --muted: var(--tx2);
+  --border: var(--line);
+  --border-strong: var(--line-strong);
+  --surface: var(--bg);
+  --surface-muted: var(--bg2);
+  --brand: #65a637;
+  --critical: #b52824;
+  --status-success: #30661a;
+  --status-warning: #795000;
+  --status-danger: #ac2421;
+  --status-neutral: #505b65;
+  --canvas: #f5f6f7;
+  --bg: #fff;
+  --bg2: #f7f8f9;
+  --bg3: #f5f6f7;
+  --line: #d5dade;
+  --line-strong: #7c8993;
+  --tx: #1a1a1a;
+  --tx2: #505b65;
+  --blue: #006eaa;
+  --blue-bg: #eef5f9;
+  --green: #39751d;
+  --green-bg: color-mix(in srgb, var(--green) 16%, var(--bg));
+  --amber: #795000;
+  --amber-bg: color-mix(in srgb, #f58f00 16%, var(--bg));
+  --red: #ac2421;
+  --sel: #edf5f9;
+  --action: #006eaa;
+  --action-hover: #005a8c;
+  --syntax-key: #a7335c;
+  --shadow: rgba(19, 31, 40, 0.12);
+  --sans: "Splunk Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --mono: "Splunk Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --status-success: #b0df90;
+    --status-warning: #ffd184;
+    --status-danger: #ffb1ad;
+    --status-neutral: #d1d9df;
+    --canvas: #171717;
+    --bg: #222222;
+    --bg2: #2a2a2a;
+    --bg3: #2a2a2a;
+    --line: #3d3d3d;
+    --line-strong: #89959e;
+    --tx: #ececec;
+    --tx2: #bac4cc;
+    --blue: #5cb3e6;
+    --blue-bg: #243642;
+    --green: #a2d879;
+    --green-bg: #2c3828;
+    --amber: #ffd184;
+    --amber-bg: #3b3225;
+    --red: #ffb1ad;
+    --sel: #25343d;
+    --syntax-key: #ec93b2;
+    --shadow: rgba(0, 0, 0, 0.28);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --status-success: #b0df90;
+  --status-warning: #ffd184;
+  --status-danger: #ffb1ad;
+  --status-neutral: #d1d9df;
+  --canvas: #171717;
+  --bg: #222222;
+  --bg2: #2a2a2a;
+  --bg3: #2a2a2a;
+  --line: #3d3d3d;
+  --line-strong: #89959e;
+  --tx: #ececec;
+  --tx2: #bac4cc;
+  --blue: #5cb3e6;
+  --blue-bg: #243642;
+  --green: #a2d879;
+  --green-bg: #2c3828;
+  --amber: #ffd184;
+  --amber-bg: #3b3225;
+  --red: #ffb1ad;
+  --sel: #25343d;
+  --syntax-key: #ec93b2;
+  --shadow: rgba(0, 0, 0, 0.28);
+  color-scheme: dark;
+}

@@ -1,4 +1,6 @@
 <script>
+  import Button from "../design-system/Button.svelte";
+  import Icon from "./Icon.svelte";
   import { onMount, tick } from "svelte";
   import { renderMermaid } from "../lib/mermaid.js";
 
@@ -111,7 +113,11 @@
           button.dataset.expandMermaid = "true";
           button.setAttribute("aria-label", "Expand diagram fullscreen");
           button.title = "Expand fullscreen";
-          button.textContent = "⛶";
+          const icon = document.createElement("span");
+          icon.className = "app-icon";
+          icon.setAttribute("aria-hidden", "true");
+          icon.textContent = "fullscreen";
+          button.append(icon);
           button.addEventListener("click", () => {
             expandedSource = source;
           });
@@ -146,8 +152,8 @@
 
 <div class="md-field">
   <div class="md-actions">
-    <button class="btn" onclick={() => (editing = !editing)}
-      >{editing ? "Preview" : label}</button
+    <Button class="btn" onclick={() => (editing = !editing)}
+      >{editing ? "Preview" : label}</Button
     >
   </div>
   {#if editing}
@@ -163,7 +169,7 @@
   {/if}
   {#if expandedSource}
     <div class="mermaid-lightbox" role="dialog" aria-modal="true" aria-label="Mermaid diagram fullscreen" tabindex="-1" use:focusDialog onkeydown={handleDialogKeydown}>
-      <button class="mermaid-close" aria-label="Close fullscreen diagram" onclick={() => (expandedSource = "")}>✕</button>
+      <Button variant="unstyled" class="mermaid-close" aria-label="Close fullscreen diagram" onclick={() => (expandedSource = "")}><Icon name="close" /></Button>
       <div class="mermaid-fullscreen" bind:this={fullscreenContainer}></div>
     </div>
   {/if}

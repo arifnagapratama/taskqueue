@@ -26,6 +26,7 @@ try {
   await build({
     entryPoints: [join(root, "tests/markdown-field.browser.js")],
     outfile: join(directory, "test.js"), bundle: true, format: "iife", platform: "browser",
+    loader: { ".woff": "file", ".woff2": "file" },
     conditions: ["browser"], plugins: [{ name: "svelte", setup(builder) {
       builder.onLoad({ filter: /\.svelte$/ }, async ({ path }) => ({
         contents: compile(await readFile(path, "utf8"), { filename: path, generate: "client" }).js.code,
@@ -33,7 +34,7 @@ try {
       }));
     }}],
   });
-  await writeFile(join(directory, "index.html"), '<!doctype html><html><body><script src="test.js"></script></body></html>');
+  await writeFile(join(directory, "index.html"), '<!doctype html><html><head><link rel="stylesheet" href="test.css"></head><body><script src="test.js"></script></body></html>');
   const { stdout } = await promisify(execFile)(chromium, ["--headless", "--no-sandbox", "--disable-gpu",
     "--dump-dom", "--virtual-time-budget=10000", `file://${join(directory, "index.html")}`], { maxBuffer: 1024 * 1024, timeout: 30000 });
   const result = stdout.match(/(?:PASS|FAIL):[^<]+/)?.[0];

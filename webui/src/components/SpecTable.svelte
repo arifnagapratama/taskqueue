@@ -1,4 +1,7 @@
 <script>
+  import Button from "../design-system/Button.svelte";
+  import Badge from "../design-system/Badge.svelte";
+  import Icon from "./Icon.svelte";
   import { ORDER, STATUS, blocked, fmt, testPercent } from "../lib/helpers.js";
   export let specs = [];
   export let adrs = [];
@@ -17,11 +20,11 @@
 
 <table id="tbl">
   <colgroup id="cg"
-    ><col style="width:44px" /><col style="width:76px" /><col
+    ><col style="width:44px" /><col style="width:116px" /><col
       style="width:380px"
-    /><col style="width:92px" /><col style="width:132px" /><col
-      style="width:96px"
-    /><col style="width:150px" /><col style="width:130px" /></colgroup
+    /><col style="width:110px" /><col style="width:180px" /><col
+      style="width:128px"
+    /><col style="width:150px" /><col style="width:188px" /></colgroup
   >
   <thead
     ><tr
@@ -33,7 +36,7 @@
     {#each groups as section (section.key)}
       <tr class="grp" onclick={() => ontoggle(section.key)}
         ><td colspan="8"
-          >{collapsed[section.key] ? "▸" : "▾"}
+          ><Icon name={collapsed[section.key] ? "chevron_right" : "expand_more"} />
           {section.label}<span class="n">{section.specs.length}</span></td
         ></tr
       >
@@ -51,20 +54,20 @@
             onkeydown={(event) => event.key === "Enter" && onselect(spec.id)}
           >
             <td class="rank mono">{spec.s === "finished" ? "" : index + 1}</td>
-            <td class="mono">{spec.id}</td>
+            <td class="mono" title={spec.id}>{spec.id}</td>
             <td title={spec.t}>{spec.t}</td>
             <td
-              >{#if spec.epic}<button
+              >{#if spec.epic}<Button variant="unstyled"
                   type="button"
                   class="chip"
                   onclick={(event) => {
                     event.stopPropagation();
                     ongo(spec.epic);
-                  }}>{spec.epic}</button
+                  }}>{spec.epic}</Button
                 >{:else}<span class="lbl">—</span>{/if}</td
             >
             <td class="st"
-              ><span class="pill p-{spec.s}">{STATUS[spec.s]}</span>
+              ><Badge tone={spec.s === "finished" ? "success" : spec.s === "in_progress" ? "warning" : "neutral"} class="p-{spec.s}">{STATUS[spec.s]}</Badge>
               {#if spec.ai}<span
                   class="ai"
                   title="{spec.ai.agent}: {spec.ai.step}"
@@ -73,7 +76,7 @@
               {#if blockedBy.length}<span
                   class="blk"
                   title="Blocked by {blockedBy.join(', ')} (not accepted)"
-                  >⛔ {blockedBy[0]}{blockedBy.length > 1
+                  ><Icon name="block" /> {blockedBy[0]}{blockedBy.length > 1
                     ? ` +${blockedBy.length - 1}`
                     : ""}</span
                 >{/if}
@@ -81,11 +84,11 @@
             <td class="mono"
               ><span class="prog"
                 ><i style={`width:${testPercent(spec)}%`}></i></span
-              >{pass}/{spec.ac.length}{#if fail}<span class="ft">
-                  ✕{fail}</span
+              >{pass}/{spec.ac.length}{#if fail}<span class="ft" aria-label={`${fail} failed tests`}>
+                  <Icon name="close" />{fail}</span
                 >{/if}</td
             >
-            <td class="lbl">{spec.l.join(", ")}</td><td class="mono lbl"
+            <td class="lbl">{spec.l.join(", ")}</td><td class="mono lbl" title={fmt(spec.u)}
               >{fmt(spec.u)}</td
             >
           </tr>
