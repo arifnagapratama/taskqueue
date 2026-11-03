@@ -3,9 +3,11 @@
 UV ?= uv
 NPM ?= npm
 DOCKER ?= docker
+IMAGE ?= docker.io/tronton/taskqueue
+TAG ?= latest
 COMPOSE = $(DOCKER) compose
 
-.PHONY: help setup setup-backend setup-frontend dev dev-backend dev-frontend build serve test image up down restart logs status config health
+.PHONY: help setup setup-backend setup-frontend dev dev-backend dev-frontend build serve test image publish up down restart logs status config health init-deploy
 
 help:
 	@printf '%s\n' \
@@ -19,13 +21,15 @@ help:
 	  '  make serve          Serve the compiled frontend, REST and MCP on :8080' \
 	  '  make test           Run backend and MCP tests' \
 	  '  make image          Build the fullstack Docker image' \
-	  '  make up             Build and start Compose in the background' \
+	  '  make publish        Build and push docker.io/tronton/taskqueue (TAG=latest)' \
+	  '  make up             Start Compose from published images in the background' \
 	  '  make down           Stop Compose and preserve the SQLite volume' \
 	  '  make restart        Restart the Compose service' \
 	  '  make logs           Follow service logs' \
 	  '  make status         Show Compose service status' \
 	  '  make config         Validate and show resolved Compose configuration' \
-	  '  make health         Check the backend on localhost:8080'
+	  '  make health         Check the running backend container' \
+	  '  make init-deploy    Generate deployment secrets (run with sudo)'
 
 setup: setup-backend setup-frontend
 
@@ -54,10 +58,14 @@ test:
 	$(UV) run --frozen pytest backend
 
 image:
-	$(COMPOSE) build
+	$(DOCKER) build --tag $(IMAGE):$(TAG) .
+
+publish:
+	$(DOCKER) build --tag $(IMAGE):$(TAG) .
+	$(DOCKER) push $(IMAGE):$(TAG)
 
 up:
-	$(COMPOSE) up --build --detach
+	$(COMPOSE) up --detach
 
 down:
 	$(COMPOSE) down
@@ -75,5 +83,7 @@ config:
 	$(COMPOSE) config
 
 health:
-	curl --fail --silent --show-error http://localhost:8080/api/health
-	@printf '\n'
+	$(COMPOSE) exec -T task-queue python -m backend.healthcheck
+
+init-deploy:
+	python3 scripts/init-deploy.py

@@ -111,3 +111,58 @@ def test_mcp_typed_contracts(client):
     }})
     assert malformed["isError"] is True
     assert store.get_state("typed")["revision"] == 2
+
+
+@pytest.mark.parametrize("path", ["/api/health", "/api/projects", "/mcp/", "/docs", "/openapi.json"])
+def test_token_required(client, monkeypatch, tmp_path, path):
+    token_file = tmp_path / "token"
+    token_file.write_text("test-secret\n")
+    monkeypatch.setenv("TASKQUEUE_TOKEN_FILE", str(token_file))
+    assert client.get(path).status_code == 401
+    assert client.get(path, headers={"x-api-token": "wrong"}).status_code == 401
+    assert client.get(path, headers={"x-api-token": "test-secret"}).status_code != 401
+
+
+def test_token_rotation_and_fail_closed(client, monkeypatch, tmp_path):
+    token_file = tmp_path / "token"
+    token_file.write_text("old")
+    monkeypatch.setenv("TASKQUEUE_TOKEN_FILE", str(token_file))
+    assert client.get("/api/health", headers={"x-api-token": "old"}).status_code == 200
+    token_file.write_text("new")
+    assert client.get("/api/health", headers={"x-api-token": "old"}).status_code == 401
+    assert client.get("/api/health", headers={"x-api-token": "new"}).status_code == 200
+    token_file.write_text("")
+    assert client.get("/api/health", headers={"x-api-token": ""}).status_code == 401
+    token_file.unlink()
+    assert client.get("/api/health", headers={"x-api-token": "new"}).status_code == 401
+
+
+def test_websocket_auth(client, monkeypatch, tmp_path):
+    from starlette.websockets import WebSocketDisconnect
+    token_file = tmp_path / "token"
+    token_file.write_text("secret")
+    monkeypatch.setenv("TASKQUEUE_TOKEN_FILE", str(token_file))
+    with client.websocket_connect("/api/events?project_id=default") as socket:
+        socket.send_json({"token": "wrong"})
+        with pytest.raises(WebSocketDisconnect) as error:
+            socket.receive_json()
+        assert error.value.code == 4401
+    with client.websocket_connect("/api/events") as socket:
+        socket.send_json({"token": "secret"})
+        with pytest.raises(WebSocketDisconnect) as error:
+            socket.receive_json()
+        assert error.value.code == 1008  # authenticated; missing project rejected separately
+
+
+def test_mcp_deployment_host_allowlist(monkeypatch):
+    from backend.mcp_server import transport_security
+    from mcp.server.transport_security import TransportSecurityMiddleware
+    monkeypatch.setenv("TASKQUEUE_IP", "10.20.30.40")
+    security = TransportSecurityMiddleware(transport_security())
+    assert security._validate_host("10.20.30.40:5443")
+    assert security._validate_origin("https://10.20.30.40:5443")
+    assert not security._validate_host("10.20.30.41:5443")
+    assert not security._validate_origin("https://untrusted.example:5443")
+    monkeypatch.setenv("TASKQUEUE_IP", "invalid")
+    with pytest.raises(ValueError):
+        transport_security()

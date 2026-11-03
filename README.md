@@ -20,7 +20,7 @@ Run `make help` from the repository root for all shortcuts.
 make setup        # Install dependencies from lockfiles
 make dev          # Backend :8080 and Vite :5173 together
 make test         # Backend and MCP tests
-make up           # Build and start the fullstack container
+make up           # Start the published fullstack container
 make logs         # Follow container logs
 make down         # Stop the container; SQLite volume is preserved
 ```
@@ -31,18 +31,139 @@ Use `make dev-backend` and `make dev-frontend` in separate terminals if preferre
 cover container and service operations. Override executables when needed,
 for example `make setup UV=/path/to/uv`.
 
-## Run the fullstack image
+## Deploy on the VPN server
 
-From the repository root:
+Publish the application image to Docker Hub after `docker login docker.io`:
 
 ```sh
-docker compose up --build -d
+make publish                 # docker.io/tronton/taskqueue:latest
+make publish TAG=1.0.0       # publish a specific tag
 ```
 
-UI: http://localhost:8080. REST docs: http://localhost:8080/docs.
-MCP Streamable HTTP: http://localhost:8080/mcp/.
-SQLite lives at `/data/task-queue.sqlite3` in the Compose named volume.
-Keep the volume when replacing the container. `docker compose down -v` removes data.
+The target builds the image before pushing it. Override `IMAGE` if another
+registry/repository is needed.
+
+Requirements: Linux x86_64, Docker Engine with Compose, Python 3, and OpenSSL.
+Copy `.env.example` to `.env` and set `TASKQUEUE_IP` to the static VPN IP.
+The server only needs these files; preserve their relative paths:
+
+```text
+compose.yaml
+.env.example
+deploy/nginx.conf
+scripts/init-deploy.py
+```
+
+Copy them into a dedicated deployment directory (no application source, Dockerfile,
+Node.js, or uv required). Run from that directory after preparing `.env`:
+
+```sh
+sudo python3 scripts/init-deploy.py
+docker compose pull
+docker compose up -d
+```
+
+Initialization creates one random token, a private key, and a self-signed PEM
+certificate in `deploy/private/`. Existing files are preserved on subsequent
+runs. The certificate has the configured IP as its SAN and expires after 365
+days. The token is readable by container UID 10001; initialization requires root
+to set that ownership. `.env`, private files, and backups are ignored by Git
+and excluded from the application image build context.
+
+Open `https://IP_SERVER:5443/` and enter the token from `deploy/private/token`.
+Trust `deploy/private/server.crt` in the browser/OS before accessing the site.
+REST and MCP requests require `x-api-token`; the UI shell remains available to
+present the login screen. MCP endpoint: `https://IP_SERVER:5443/mcp/`.
+Nginx terminates HTTPS and forwards REST, MCP streams, and WebSocket events.
+SQLite lives at `/data/task-queue.sqlite3` in the named Compose volume.
+`docker compose down` preserves data; `docker compose down -v` deletes it.
+
+To rotate the token, update the contents of `deploy/private/token` while
+preserving its owner and permissions. The application reads the file for each
+request. Mounting the containing directory also supports atomic file replacement.
+Users must enter the new token and MCP clients must restart with the new value.
+For certificate renewal or an IP change, stop Compose, archive the existing
+certificate/key, remove the pair, rerun initialization, then start Compose and
+redistribute the new public certificate. Keep private keys on the server.
+
+Set `TASKQUEUE_TAG` in `.env` to the published version (default `latest`).
+To update, run `docker compose pull` followed by `docker compose up -d`.
+See [database loading instructions](docs/load-database.md) before the first
+startup when migrating existing data.
+
+### Codex CLI
+
+Add this to `~/.codex/config.toml`, replacing `IP_SERVER`:
+
+```toml
+[mcp_servers.taskqueue]
+url = "https://IP_SERVER:5443/mcp/"
+env_http_headers = { "x-api-token" = "TASKQUEUE_TOKEN" }
+```
+
+Before starting Codex, export the token securely from your local secret file
+and trust the copied public certificate:
+
+```sh
+export TASKQUEUE_TOKEN="$(cat /absolute/path/taskqueue-token)"
+export TASKQUEUE_CERTS=/absolute/path/server.crt
+export CODEX_CA_CERTIFICATE="$TASKQUEUE_CERTS"
+codex
+```
+
+Codex supports [headers from environment variables](https://learn.chatgpt.com/docs/extend/mcp)
+and [custom PEM trust bundles](https://learn.chatgpt.com/docs/config-file/environment-variables).
+`TASKQUEUE_CERTS` is our convenience variable; `CODEX_CA_CERTIFICATE` is the
+Codex setting. TLS verification remains enabled. The client machine needs VPN
+connectivity to the server. Project selection uses the existing MCP tools.
+
+## Backup, migration, restore and rollback
+
+Create a consistent snapshot from the local database (adjust the source path to
+the database actually used by the running process):
+
+```sh
+mkdir -p backups
+python3 scripts/backup.py data/task-queue.sqlite3 backups/migration.sqlite3
+```
+
+The script uses SQLite online backup, checks integrity and foreign keys, and
+prints project revisions and entity counts. Existing destination files are
+never overwritten. For final migration, stop writes on the source before taking
+the snapshot and keep the source stopped until the new instance is verified.
+Copy the snapshot securely to `backups/migration.sqlite3` on the server.
+
+For a fresh destination, initialize deployment files, then restore while the
+application is stopped:
+
+```sh
+docker compose stop
+docker compose run --rm --no-deps --user root --entrypoint python \
+  -v "$PWD/backups:/backups:ro" task-queue \
+  -c 'import os; from backup import backup; backup("/backups/migration.sqlite3","/data/task-queue.sqlite3"); os.chown("/data/task-queue.sqlite3",10001,10001)'
+docker compose up -d
+```
+
+Pull the published image first with `docker compose pull`. The restore command refuses
+to overwrite an existing database. Check the project list, revisions and task
+counts against the snapshot output, then verify reads and writes in the UI/MCP.
+The existing application creates a `default` project at startup; migration does
+not delete projects.
+
+For recurring backups, use the utility bundled in the image to write a snapshot
+into its data volume, then copy that completed snapshot to the host:
+
+```sh
+docker compose exec task-queue python /app/backup.py /data/task-queue.sqlite3 /data/snapshot.sqlite3
+docker compose cp task-queue:/data/snapshot.sqlite3 backups/snapshot.sqlite3
+```
+
+Use unique snapshot names for later backups. Store copies outside the server;
+scheduling and retention are operator-managed. To roll back a migration, stop
+the new deployment before restarting the retained local instance. To restore a
+backup over an existing deployment, stop Compose, archive the entire existing
+data volume (including WAL files), and restore into a fresh volume using the
+same procedure. Keep the old volume until verification succeeds.
 
 ## Develop
 
@@ -77,7 +198,12 @@ MCP uses descriptive field names (`task_id`, `title`, `status`, `description`,
 Every tool advertises input/output JSON Schema and returns:
 
 ```json
-{"ok": true, "revision": 1, "data": {"project_id": "example", "name": "Example", "revision": 1}, "error": null}
+{
+  "ok": true,
+  "revision": 1,
+  "data": { "project_id": "example", "name": "Example", "revision": 1 },
+  "error": null
+}
 ```
 
 Results are sent in `structuredContent`, plus matching JSON text for compatibility.
@@ -107,4 +233,4 @@ reload the latest state and reapply. Browser demo data is not imported automatic
 
 Run one container per local SQLite volume. Back up with SQLite's online backup
 API or stop the container and copy the complete volume including WAL files.
-No authentication is included; use a trusted network or authenticated reverse proxy.
+Set `TASKQUEUE_TOKEN_FILE` to enable token authentication. Without it, local development remains unauthenticated; use only a trusted development environment.

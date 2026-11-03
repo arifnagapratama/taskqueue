@@ -1,12 +1,23 @@
 name: task-queue
 services:
   task-queue:
-    build: .
-    image: task-queue:local
-    ports:
-      - "8080:8080"
+    image: docker.io/tronton/taskqueue:${TASKQUEUE_TAG:-latest}
+    environment:
+      TASKQUEUE_IP: ${TASKQUEUE_IP:?Set TASKQUEUE_IP in .env}
+      TASKQUEUE_TOKEN_FILE: /run/taskqueue/token
     volumes:
       - task-queue-data:/data
+      - ./deploy/private:/run/taskqueue:ro
+    restart: unless-stopped
+  https:
+    image: nginx:1.28-alpine
+    ports:
+      - "${TASKQUEUE_IP:?Set TASKQUEUE_IP in .env}:5443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/private:/run/taskqueue:ro
+    depends_on:
+      - task-queue
     restart: unless-stopped
 volumes:
   task-queue-data:

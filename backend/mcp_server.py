@@ -1,9 +1,12 @@
 """Typed MCP boundary with structured results and actionable tool errors."""
 import json
+import os
+import ipaddress
 import sqlite3
 from typing import Annotated, Literal
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from backend import store, operations
@@ -12,7 +15,20 @@ from backend.contracts import (
     Task, TestReport, entity_view, test_view, to_storage,
 )
 
-mcp = FastMCP("Task Queue", stateless_http=True, json_response=True, streamable_http_path="/")
+def transport_security():
+    hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    origins = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+    configured_ip = os.environ.get("TASKQUEUE_IP")
+    if configured_ip:
+        address = ipaddress.ip_address(configured_ip)
+        host = f"[{address}]" if address.version == 6 else str(address)
+        hosts.append(f"{host}:5443")
+        origins.append(f"https://{host}:5443")
+    return TransportSecuritySettings(allowed_hosts=hosts, allowed_origins=origins)
+
+
+mcp = FastMCP("Task Queue", stateless_http=True, json_response=True, streamable_http_path="/",
+              transport_security=transport_security())
 READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=False)
 

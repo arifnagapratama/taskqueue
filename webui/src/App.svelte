@@ -6,6 +6,10 @@
   import DetailPanel from './components/DetailPanel.svelte';
   import { ADR_STATUS, blocked, matchesEntity, matchesSpec } from './lib/helpers.js';
 
+  let token = readToken();
+  let tokenInput = '';
+  let needsLogin = false;
+  let loginBusy = false;
   let specs = [];
   let epics = [];
   let adrs = [];
@@ -44,13 +48,19 @@
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const connection = new WebSocket(`${protocol}//${location.host}/api/events?project_id=${encodeURIComponent(id)}`);
     socket = connection;
+    connection.onopen = () => connection.send(JSON.stringify({ token }));
     connection.onmessage = (event) => {
       const change = JSON.parse(event.data);
       if (change.project_id !== projectId || change.revision <= revision) return;
       if (saving || failedSnapshot) refreshPending = true;
       else reloadCurrentProject();
     };
-    connection.onclose = () => {
+    connection.onclose = (event) => {
+      if (event.code === 4401) {
+        requireLogin();
+        error = 'Token rejected. Enter the current application token.';
+        return;
+      }
       if (socket === connection && projectId === id) {
         window.setTimeout(() => {
           if (socket === connection && projectId === id) connectProjectEvents(id);
@@ -61,11 +71,53 @@
 
   async function request(path, options = {}) {
     const response = await fetch(path, {
-      ...options, headers: { 'Content-Type': 'application/json' },
+      ...options, headers: { 'Content-Type': 'application/json', ...options.headers, ...(token ? { 'x-api-token': token } : {}) },
     });
+    if (response.status === 401) {
+      requireLogin();
+      throw new Error('Token required or invalid.');
+    }
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
     return body;
+  }
+
+  function readToken() {
+    try { return sessionStorage.getItem('task-queue-token') || ''; } catch { return ''; }
+  }
+
+  function requireLogin() {
+    needsLogin = true;
+    token = '';
+    try { sessionStorage.removeItem('task-queue-token'); } catch {}
+    const previous = socket;
+    socket = null;
+    previous?.close();
+  }
+
+  function logout() {
+    if ((saving || failedSnapshot) && !window.confirm('Sign out and discard unsaved changes?')) return;
+    requireLogin();
+    specs = []; epics = []; adrs = []; projects = []; projectId = '';
+    failedSnapshot = null;
+    error = '';
+  }
+
+  async function login(event) {
+    event.preventDefault();
+    if (!tokenInput.trim() || loginBusy) return;
+    token = tokenInput.trim();
+    loginBusy = true;
+    try {
+      await request('/api/projects');
+      try { sessionStorage.setItem('task-queue-token', token); } catch {}
+      tokenInput = '';
+      needsLogin = false;
+      error = '';
+      if (failedSnapshot && projectId) connectProjectEvents(projectId);
+      else await initialize();
+    } catch (reason) { error = reason.message; }
+    finally { loginBusy = false; }
   }
 
   async function loadProject(id) {
@@ -94,6 +146,7 @@
     try {
       projects = await request('/api/projects');
       const wanted = projectFromHash();
+      if (!projects.length) { loading = false; return; }
       await loadProject(projects.some((project) => project.id === wanted) ? wanted : projects[0].id);
     } catch (reason) {
       loading = false;
@@ -244,7 +297,7 @@
     initialize();
     if (theme) document.documentElement.dataset.theme = theme;
     const handleKey = (event) => {
-      if (loading || failedSnapshot) return;
+      if (needsLogin || loading || failedSnapshot) return;
       if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '')) {
         if (event.key === 'Escape') document.activeElement.blur();
         return;
@@ -274,13 +327,28 @@
     return () => {
       document.removeEventListener('keydown', handleKey);
       window.removeEventListener('hashchange', onHashChange);
-      socket?.close();
+      const previous = socket;
+      socket = null;
+      previous?.close();
     };
   });
 </script>
 
 <svelte:head><title>Task Queue</title></svelte:head>
 
+{#if needsLogin}
+  <main class="login-panel">
+    <h1>Task Queue</h1>
+    <form onsubmit={login}>
+      <label for="application-token">Application token</label>
+      <input id="application-token" type="password" bind:value={tokenInput} autocomplete="off" required />
+      <button class="btn" type="submit" disabled={loginBusy}>{loginBusy ? 'Signing in…' : 'Sign in'}</button>
+    </form>
+    {#if error}<p role="alert">{error}</p>{/if}
+    {#if failedSnapshot}<p>Unsaved changes are retained. Sign in to retry saving.</p>{/if}
+  </main>
+{:else}
+{#if token}<div class="session-bar"><button class="btn" onclick={logout} disabled={saving}>Sign out</button></div>{/if}
 <Toolbar
   {view} {query} {stage} {statusFilter} {counts}
   {projects} {projectId} busy={loading || saving || !!failedSnapshot}
@@ -322,3 +390,12 @@
   <span>{view === 'specs' ? statusText : view === 'epics' ? `Open ${epics.filter((item) => item.s === 'OPEN').length} · Closed ${epics.filter((item) => item.s === 'CLOSED').length} · Showing ${visibleEpics.length}/${epics.length}` : `${ADR_STATUS.map((status) => `${status} ${adrs.filter((item) => item.s === status).length}`).join(' · ')} · Showing ${visibleAdrs.length}/${adrs.length}`}</span>
   <span class="sp"></span><span><kbd>j</kbd><kbd>k</kbd> select</span><span><kbd>Alt</kbd>+<kbd>↑↓</kbd> priority</span><span><kbd>Esc</kbd> close</span><span role="status">{saving ? 'Saving…' : failedSnapshot ? 'Unsaved changes' : 'SQLite'}</span>
 </div>
+
+{/if}
+
+<style>
+  .login-panel { max-width: 26rem; margin: 10vh auto; padding: 1.5rem; }
+  .login-panel form { display: grid; gap: 1rem; }
+  .login-panel input { padding: .7rem; width: 100%; box-sizing: border-box; }
+  .session-bar { display: flex; justify-content: flex-end; padding: .3rem .75rem; }
+</style>

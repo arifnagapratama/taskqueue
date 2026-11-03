@@ -2,6 +2,7 @@
 import os
 import sqlite3
 import asyncio
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -50,6 +51,30 @@ async def store_error(request, error):
 @app.exception_handler(sqlite3.Error)
 async def database_error(request, error):
     return JSONResponse({"error": "Database unavailable"}, status_code=503)
+
+
+def token_valid(candidate):
+    """Read on every authentication so replacing file contents rotates the token."""
+    token_file = os.environ.get("TASKQUEUE_TOKEN_FILE")
+    if not token_file:
+        return True
+    try:
+        expected = Path(token_file).read_text().strip()
+    except (OSError, UnicodeError):
+        return False
+    return bool(expected) and isinstance(candidate, str) and secrets.compare_digest(
+        candidate.encode(), expected.encode()
+    )
+
+
+@app.middleware("http")
+async def authenticate(request: Request, call_next):
+    path = request.url.path
+    if (path.startswith(("/api", "/mcp", "/docs", "/redoc")) or path == "/openapi.json"):
+        if not token_valid(request.headers.get("x-api-token")):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401,
+                                headers={"Cache-Control": "no-store"})
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -104,6 +129,15 @@ async def project_events(websocket: WebSocket):
     global subscriber_loop
     project_id = websocket.query_params.get("project_id", "")
     await websocket.accept()
+    if os.environ.get("TASKQUEUE_TOKEN_FILE"):
+        try:
+            credentials = await asyncio.wait_for(websocket.receive_json(), timeout=5)
+            valid = isinstance(credentials, dict) and token_valid(credentials.get("token"))
+        except (asyncio.TimeoutError, WebSocketDisconnect, ValueError):
+            valid = False
+        if not valid:
+            await websocket.close(code=4401)
+            return
     if not project_id:
         await websocket.close(code=1008)
         return

@@ -6,3 +6,6 @@ webui/node_modules
 webui/dist
 **/__pycache__
 **/.pytest_cache
+.env
+deploy/private
+backups

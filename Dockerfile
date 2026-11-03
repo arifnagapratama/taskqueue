@@ -13,11 +13,12 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY backend ./backend
+COPY scripts/backup.py ./backup.py
 COPY --from=frontend /build/dist ./dist
 RUN useradd --uid 10001 --create-home app && mkdir /data && chown app:app /data
 ENV DATABASE_PATH=/data/task-queue.sqlite3 STATIC_PATH=/app/dist PYTHONDONTWRITEBYTECODE=1 PATH=/app/.venv/bin:$PATH
 USER app
 VOLUME /data
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3)"
+HEALTHCHECK --interval=30s --timeout=5s CMD python -m backend.healthcheck
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8080"]
