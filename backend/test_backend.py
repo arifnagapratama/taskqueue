@@ -173,6 +173,7 @@ def test_task_metadata_rest_and_legacy_rows(client):
     saved_task = state["specs"][0]
     assert state["revision"] == 0
     assert (saved_task["priority"], saved_task["kind"]) == ("P2", "other")
+    assert saved_task["depends_on"] == []
 
     saved_task.update(priority="P01", kind="feature", s="verify")
     assert client.put(url, json=state).status_code == 400
@@ -184,6 +185,59 @@ def test_task_metadata_rest_and_legacy_rows(client):
     assert client.put(url, json=state).json() == {"revision": 2}
     saved = client.get(url).json()["specs"][0]
     assert (saved["priority"], saved["kind"], saved["s"]) == ("P0", "integration-test", "deferred")
+
+
+def test_task_dependencies_rest_and_mcp(client):
+    store.create_project("dependencies", "Dependencies")
+    url = "/api/projects/dependencies/state"
+    base_task = {"t": "Task", "s": "todo", "d": "", "adrs": [], "bl": [], "l": [], "log": [], "ac": []}
+    prerequisite = dict(base_task, id="A")
+    dependent = dict(base_task, id="B", depends_on=["A"])
+    state = {"revision": 0, "specs": [prerequisite, dependent], "adrs": [], "epics": []}
+    assert client.put(url, json=state).json() == {"revision": 1}
+    state["revision"] = 1
+
+    for invalid_links in (["B"], ["A", "A"], ["missing"]):
+        invalid = dict(state, specs=[prerequisite, dict(dependent, depends_on=invalid_links)])
+        assert client.put(url, json=invalid).status_code == 400
+    cycle = dict(state, specs=[dict(prerequisite, depends_on=["B"]), dependent])
+    assert client.put(url, json=cycle).status_code == 400
+    assert client.put(url, json=dict(state, specs=[dependent])).status_code == 400
+    blocked = dict(state, specs=[prerequisite, dict(dependent, s="in_progress")])
+    assert client.put(url, json=blocked).status_code == 409
+    assert client.get(url).json()["revision"] == 1
+
+    def call(name, **arguments):
+        response = client.post("/mcp/", headers={"Accept": "application/json, text/event-stream"}, json={
+            "jsonrpc": "2.0", "id": 42, "method": "tools/call",
+            "params": {"name": name, "arguments": dict(arguments, project_id="dependencies")},
+        })
+        return response.json()["result"]["structuredContent"]
+
+    assert call("claim_task", task_id="B")["error"]["code"] == "conflict"
+    edited = call("upsert_entity", revision=1, entity={"kind": "task", "task_id": "B", "title": "Renamed"})
+    assert edited["data"]["depends_on"] == ["A"]
+    state["revision"] = edited["revision"]
+    state["specs"] = [dict(prerequisite, s="finished"), dict(base_task, id="B")]
+    assert client.put(url, json=state).json() == {"revision": 3}
+    claimed = call("claim_task", task_id="B")
+    assert claimed["data"]["depends_on"] == ["A"]
+    assert claimed["data"]["status"] == "in_progress"
+    assert call("release_task", task_id="B", agent="ai-agent")["ok"]
+    cleared = call("upsert_entity", revision=5, entity={
+        "kind": "task", "task_id": "B", "title": "Independent", "depends_on": [],
+    })
+    assert cleared["data"]["depends_on"] == []
+    linked = call("upsert_entity", revision=6, entity={
+        "kind": "task", "task_id": "B", "title": "Dependent", "depends_on": ["A"],
+    })
+    assert linked["data"]["depends_on"] == ["A"]
+    reopened = client.get(url).json()
+    reopened["specs"][0]["s"] = "verify"
+    assert client.put(url, json=reopened).json() == {"revision": 8}
+    conflict = call("claim_task", task_id="B")
+    assert conflict["error"]["code"] == "conflict"
+    assert "Finish prerequisite tasks first: A" in conflict["error"]["message"]
 
 
 @pytest.mark.parametrize("path", ["/api/health", "/api/projects", "/mcp/", "/docs", "/openapi.json"])

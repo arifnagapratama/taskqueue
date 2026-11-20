@@ -253,11 +253,12 @@
     : view === 'epics'
       ? epics.find((item) => item.id === selectedId)
       : adrs.find((item) => item.id === selectedId);
-  $: visibleSpecs = specs.filter((spec) => matchesSpec(spec, query, stage, epics, adrs));
+  $: taskById = new Map(specs.map((spec) => [spec.id, spec]));
+  $: visibleSpecs = specs.filter((spec) => matchesSpec(spec, query, stage, epics, adrs, taskById));
   $: visibleEpics = epics.filter((epic) => matchesEntity(epic, query, statusFilter));
   $: visibleAdrs = adrs.filter((adr) => matchesEntity(adr, query, statusFilter));
   $: counts = { specs: specs.length, epics: epics.length, adrs: adrs.length };
-  $: statusText = `${Object.entries(STATUS).map(([status, label]) => `${label} ${specs.filter((spec) => spec.s === status).length}`).join(' · ')}  ·  Blocked ${specs.filter((spec) => blocked(spec, adrs).length).length}  ·  AI active ${specs.filter((spec) => spec.ai).length}  ·  Showing ${visibleSpecs.length}/${specs.length}`;
+  $: statusText = `${Object.entries(STATUS).map(([status, label]) => `${label} ${specs.filter((spec) => spec.s === status).length}`).join(' · ')}  ·  Blocked ${specs.filter((spec) => blocked(spec, adrs, taskById).length).length}  ·  AI active ${specs.filter((spec) => spec.ai).length}  ·  Showing ${visibleSpecs.length}/${specs.length}`;
 
   function changeView(nextView, id = null) {
     view = nextView;
@@ -267,8 +268,8 @@
     statusFilter = 'all';
   }
 
-  function go(id) {
-    changeView(id.startsWith('EPIC-') ? 'epics' : id.startsWith('ADR-') ? 'adrs' : 'specs', id);
+  function go(id, destination = id.startsWith('EPIC-') ? 'epics' : id.startsWith('ADR-') ? 'adrs' : 'specs') {
+    changeView(destination, id);
   }
 
   function toggleGroup(key) {
@@ -375,7 +376,7 @@
   <div class="list">
     {#if view === 'specs'}
       <SpecTable
-        specs={visibleSpecs} {adrs} selected={selectedId} {collapsed}
+        specs={visibleSpecs} {adrs} {taskById} selected={selectedId} {collapsed}
         onselect={(id) => selectedId = id}
         ontoggle={toggleGroup}
         ongo={go}
@@ -384,7 +385,7 @@
       <EntityTables {view} epics={visibleEpics} adrs={visibleAdrs} {specs} selected={selectedId} {query} {statusFilter} onselect={(id) => selectedId = id} ongo={go} />
     {/if}
   </div>
-  <DetailPanel {view} item={selectedItem} {epics} {adrs} {specs} {theme} onclose={() => selectedId = null} onupdate={updateDetail} ongo={go} />
+  <DetailPanel {view} item={selectedItem} {epics} {adrs} {specs} {taskById} {theme} onclose={() => selectedId = null} onupdate={updateDetail} ongo={go} />
 </div>
 
 <div class="status mono">

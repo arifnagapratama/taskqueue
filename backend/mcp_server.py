@@ -109,7 +109,7 @@ def upsert_entity(entity: EntityInput, revision: int, ctx: Context,
         if kind == "specs":
             item["log"] = list((current or {}).get("log", []))
             if current:
-                for field, storage_key in (("priority", "priority"), ("task_kind", "kind")):
+                for field, storage_key in (("priority", "priority"), ("task_kind", "kind"), ("depends_on", "depends_on")):
                     if field not in entity.model_fields_set:
                         item[storage_key] = current[storage_key]
             if current and current.get("ai"):
@@ -124,7 +124,7 @@ def upsert_entity(entity: EntityInput, revision: int, ctx: Context,
 @mcp.tool(annotations=WRITE)
 def claim_task(task_id: str, ctx: Context, agent: str = "ai-agent", step: str = "",
                project_id: str | None = None) -> Annotated[CallToolResult, Result[Task]]:
-    """Claim an unassigned, active task without unresolved ADR blockers. Defaults to x-project-id."""
+    """Claim a task after prerequisites finish and ADR blockers are accepted. Defaults to x-project-id."""
     def operation():
         result = operations.claim_task(resolve_project_id(project_id, ctx), task_id, agent, step)
         return entity_view("specs", result["result"]), result["revision"]

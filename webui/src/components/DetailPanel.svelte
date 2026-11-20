@@ -10,7 +10,9 @@
     EPIC_STATUS,
     STATUS,
     TASK_KINDS,
-    blocked,
+    blockingAdrs,
+    blockingTasks,
+    dependencyChoices,
     duration,
     epicRollup,
     fmt,
@@ -23,6 +25,7 @@
   export let epics = [];
   export let adrs = [];
   export let specs = [];
+  export let taskById = new Map();
   export let theme = "";
   export let onclose = () => {};
   export let onupdate = () => {};
@@ -63,7 +66,9 @@
     return () => window.removeEventListener("keydown", handleFullscreenKey, true);
   });
 
-  $: blockedBy = view === "specs" && item ? blocked(item, adrs) : [];
+  $: adrBlockers = view === "specs" && item ? blockingAdrs(item, adrs) : [];
+  $: taskBlockers = view === "specs" && item ? blockingTasks(item, taskById) : [];
+  $: availableDependencies = view === "specs" && item ? dependencyChoices(item, specs) : [];
   $: rollup = view === "epics" && item ? epicRollup(item, specs) : null;
   $: activeSpecs = rollup?.specs ?? [];
   $: relatedSpecs =
@@ -159,6 +164,20 @@
     changed(`blocked by ${id} removed`);
   }
 
+  function addDependency(event) {
+    const select = event.currentTarget;
+    const id = select.value;
+    select.value = "";
+    if (!availableDependencies.some((task) => task.id === id)) return;
+    item.depends_on = [...(item.depends_on ?? []), id];
+    changed(`dependency added: ${id}`);
+  }
+
+  function removeDependency(id) {
+    item.depends_on = item.depends_on.filter((value) => value !== id);
+    changed(`dependency removed: ${id}`);
+  }
+
   function setTestState(test, state) {
     test.st = state;
     test.run = state === "pending" ? null : Date.now();
@@ -239,9 +258,11 @@
           </div>
         </div>
       {/if}
-      {#if blockedBy.length}<div class="blkb" role="status">
-          <Icon name="block" /> Blocked until {blockedBy.join(", ")} is accepted. AI agents cannot claim
-          this task.
+      {#if adrBlockers.length || taskBlockers.length}<div class="blkb" role="status">
+          <Icon name="block" />
+          {#if taskBlockers.length}Waiting for task{taskBlockers.length === 1 ? "" : "s"} {taskBlockers.join(", ")} to finish.{/if}
+          {#if adrBlockers.length}Waiting for acceptance of {adrBlockers.join(", ")}.{/if}
+          AI agents cannot claim this task.
         </div>{/if}
       <div class="sb">
         <div class="sec">
@@ -258,7 +279,8 @@
               disabled={Boolean(item.ai)}
               title={item.ai ? "The assigned agent must release the task to change its status." : undefined}
               onchange={(e) => setStatus(e.currentTarget.value)}
-              >{#each Object.entries(STATUS) as [status, label]}<option value={status}
+              >{#each Object.entries(STATUS) as [status, label]}<option
+                  value={status} disabled={status === "in_progress" && taskBlockers.length > 0}
                   >{label}</option
                 >{/each}</select
             >
@@ -343,6 +365,26 @@
                   value={adr.id}>{adr.id} · {adr.t}</option
                 >{/each}</select
             >
+          </div>
+          <label for="task-dependency">Depends on</label>
+          <div class="task-dependencies">
+            {#each item.depends_on ?? [] as id (id)}
+              {@const prerequisite = taskById.get(id)}
+              <div class="task-dependency">
+                <Button variant="unstyled" class="chip" onclick={() => ongo(id, "specs")}
+                  title={prerequisite?.t} aria-label="Open task {id}">{id}</Button>
+                <Badge tone={taskStatusTone(prerequisite?.s)}>{STATUS[prerequisite?.s] ?? "Missing"}</Badge>
+                <Button variant="unstyled" class="rm cx" aria-label="Remove dependency {id}"
+                  onclick={() => removeDependency(id)}><Icon name="close" /></Button>
+              </div>
+            {/each}
+            <select id="task-dependency" aria-label="Add task dependency" onchange={addDependency}
+              disabled={!availableDependencies.length}>
+              <option value="">{availableDependencies.length ? "+ add task" : "No eligible tasks"}</option>
+              {#each availableDependencies as task (task.id)}
+                <option value={task.id}>{task.id} · {task.t}</option>
+              {/each}
+            </select>
           </div>
         </div>
         <h3>Description</h3>

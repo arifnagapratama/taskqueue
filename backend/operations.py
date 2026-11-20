@@ -65,6 +65,9 @@ def claim_task(project_id: str, task_id: str, agent: str = "ai-agent", step: str
         accepted = {adr["id"] for adr in state["adrs"] if adr["s"] == "ACCEPTED"}
         if task.get("ai") or task["s"] in ("deferred", "finished") or any(id not in accepted for id in task["bl"]):
             raise store.StoreError(409, "Task is claimed, deferred, finished, or blocked")
+        store.require_finished_dependencies(
+            task["depends_on"], {item["id"] for item in state["specs"] if item["s"] == "finished"},
+        )
         now = int(time.time() * 1000)
         task.update(s="in_progress", u=now, ai={"agent": agent, "since": now, "step": step})
         task["log"].insert(0, [now, agent, "AI claimed task"])

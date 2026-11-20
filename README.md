@@ -197,7 +197,7 @@ Create a project with the UI or `create_project`. Projects start empty;
 sample data can be loaded explicitly through the UI. Agents can list/read
 projects and use `upsert_entity` to create or update tasks, epics and ADRs.
 Read the project revision before editing: stale writes are rejected.
-Use `claim_task` to start work; unresolved ADR blockers, existing claims and
+Use `claim_task` to start work; unfinished prerequisite tasks, unresolved ADR blockers, existing claims and
 deferred or finished tasks prevent claiming. `report_test` records acceptance results.
 `release_task` clears the claim and can set `deferred`, `todo`, `verify`, or
 `finished`. Finishing requires all defined tests to pass.
@@ -208,6 +208,14 @@ Task `priority` accepts `P0`, `P1`, and higher numbers, and defaults to `P2`.
 Task categories such as `feature`, `bug`, or `docs` use lowercase slugs and default
 to `other`. In MCP, pass the category as `task_kind` because `kind: "task"`
 identifies the entity type. In the REST state, the task category is `kind`.
+
+Add or remove prerequisite tasks in the task detail panel. In REST and MCP,
+`depends_on` holds an array of task IDs from the same project, for example
+`["TASK-12"]`. Each prerequisite must reach `finished` before the dependent task
+can be claimed or moved to `in_progress`. Reopening a prerequisite blocks new
+claims without revoking existing ones. Cycles and references to missing tasks
+are rejected. To delete a prerequisite, remove its references first. Omit
+`depends_on` to preserve existing links on update, or pass `[]` to clear them.
 
 MCP uses descriptive field names (`task_id`, `title`, `status`, `description`,
 `blocked_by_adr_ids`, `acceptance_tests`, `assignment`, `history`).

@@ -5,6 +5,7 @@
   import { DEFAULT_PRIORITY, DEFAULT_TASK_KIND, ORDER, STATUS, blocked, fmt, taskStatusTone, testPercent } from "../lib/helpers.js";
   export let specs = [];
   export let adrs = [];
+  export let taskById = new Map();
   export let selected = null;
   export let collapsed = {};
   export let onselect = () => {};
@@ -47,7 +48,7 @@
         {#each section.specs as spec, index (spec.id)}
           {@const pass = spec.ac.filter((test) => test.st === "pass").length}
           {@const fail = spec.ac.filter((test) => test.st === "fail").length}
-          {@const blockedBy = blocked(spec, adrs)}
+          {@const blockedBy = blocked(spec, adrs, taskById)}
           <tr
             class="row s-{spec.s}"
             class:sel={selected === spec.id}
@@ -80,7 +81,7 @@
                 >{/if}
               {#if blockedBy.length}<span
                   class="blk"
-                  title="Blocked by {blockedBy.join(', ')} (not accepted)"
+                  title="Blocked by {blockedBy.join(', ')}"
                   ><Icon name="block" /> {blockedBy[0]}{blockedBy.length > 1
                     ? ` +${blockedBy.length - 1}`
                     : ""}</span

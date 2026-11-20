@@ -955,6 +955,22 @@ tr.ai-on td:first-child {
   max-width: 150px;
   padding: 0 4px;
 }
+.task-dependencies {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.task-dependency {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.task-dependency .chip {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .blk {
   color: var(--amber);
   font:

@@ -3,6 +3,7 @@ import json
 import os
 import re
 import sqlite3
+from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
 from typing import get_args
 
@@ -91,6 +92,11 @@ def validate_state(state):
                 for key in ("l", "adrs", "bl"):
                     if not isinstance(item.get(key), list) or any(not isinstance(v, str) for v in item[key]):
                         raise ValueError(f"{key} must contain strings")
+                dependencies = item.get("depends_on", [])
+                if not isinstance(dependencies, list) or any(not isinstance(v, str) for v in dependencies):
+                    raise ValueError("depends_on must contain task IDs")
+                if len(dependencies) != len(set(dependencies)):
+                    raise ValueError("Duplicate task dependency")
                 if not isinstance(item.get("log"), list) or not isinstance(item.get("ac"), list):
                     raise ValueError("Tasks need history and acceptance tests")
                 for test in item["ac"]:
@@ -147,6 +153,7 @@ def read_state(db, project_id):
     for row in db.execute("SELECT kind,payload FROM entities WHERE project_id=? ORDER BY position", (project_id,)):
         item = json.loads(row["payload"])
         if row["kind"] == "specs":
+            item.setdefault("depends_on", [])
             for field, (default, _) in TASK_METADATA.items():
                 item.setdefault(field, default)
         state[row["kind"]].append(item)
@@ -171,7 +178,16 @@ def write_state(db, project_id, state):
         raise StoreError(409, "Project changed in another session. Reload before editing.")
     current_tasks = {task["id"]: task for task in current["specs"]}
     for task in state["specs"]:
+        task.setdefault("depends_on", current_tasks.get(task["id"], {}).get("depends_on", []))
+    validate_task_links(state["specs"])
+    finished = {task["id"] for task in state["specs"] if task["s"] == "finished"}
+    for task in state["specs"]:
         previous = current_tasks.get(task["id"], {})
+        if task["s"] == "in_progress":
+            dependencies = task["depends_on"]
+            if previous.get("s") == "in_progress":
+                dependencies = [task_id for task_id in dependencies if task_id not in previous["depends_on"]]
+            require_finished_dependencies(dependencies, finished)
         for field, (default, _) in TASK_METADATA.items():
             task.setdefault(field, previous.get(field, default))
     db.execute("DELETE FROM entities WHERE project_id=?", (project_id,))
@@ -182,6 +198,24 @@ def write_state(db, project_id, state):
     db.execute("UPDATE projects SET revision=revision+1 WHERE id=?", (project_id,))
     revision = current["revision"] + 1
     return {"revision": revision}
+
+
+def require_finished_dependencies(dependencies, finished):
+    pending = [task_id for task_id in dependencies if task_id not in finished]
+    if pending:
+        raise StoreError(409, "Finish prerequisite tasks first: " + ", ".join(pending))
+
+
+def validate_task_links(tasks):
+    links = {task["id"]: task["depends_on"] for task in tasks}
+    for task_id, dependencies in links.items():
+        for dependency in dependencies:
+            if dependency not in links:
+                raise StoreError(400, f"Task {task_id} depends on missing task {dependency}")
+    try:
+        TopologicalSorter(links).prepare()
+    except CycleError as error:
+        raise StoreError(400, "Task dependency cycle: " + " → ".join(error.args[1])) from error
 
 
 def put_state(project_id, state):

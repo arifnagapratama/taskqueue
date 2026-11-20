@@ -35,9 +35,38 @@ export function duration(ms) {
     : `${minutes}m`;
 }
 
-export function blocked(spec, adrs) {
+export function blockingAdrs(spec, adrs) {
   return (spec.bl || []).filter(
     (id) => adrs.find((adr) => adr.id === id)?.s !== "ACCEPTED",
+  );
+}
+
+export function blockingTasks(spec, taskById) {
+  return (spec.depends_on ?? []).filter(
+    (id) => taskById.get(id)?.s !== "finished",
+  );
+}
+
+export function blocked(spec, adrs, taskById) {
+  return [...blockingAdrs(spec, adrs), ...blockingTasks(spec, taskById)];
+}
+
+export function dependencyChoices(spec, specs) {
+  const dependents = new Map();
+  for (const task of specs) {
+    for (const id of task.depends_on ?? []) {
+      if (!dependents.has(id)) dependents.set(id, []);
+      dependents.get(id).push(task.id);
+    }
+  }
+  // Adding any task that already depends on this one would create a cycle.
+  const excluded = new Set([spec.id]);
+  for (const id of excluded) {
+    for (const dependent of dependents.get(id) ?? []) excluded.add(dependent);
+  }
+  for (const id of spec.depends_on ?? []) excluded.add(id);
+  return specs.filter((task) =>
+    !excluded.has(task.id) && (spec.s !== "in_progress" || task.s === "finished"),
   );
 }
 
@@ -55,7 +84,7 @@ export function parseFilter(query) {
     });
 }
 
-export function matchesSpec(spec, query, stage, epics, adrs) {
+export function matchesSpec(spec, query, stage, epics, adrs, taskById) {
   if (stage !== "all" && spec.s !== stage) return false;
   return parseFilter(query).every(({ key, value }) => {
     const priority = (spec.priority ?? DEFAULT_PRIORITY).toLowerCase();
@@ -74,8 +103,8 @@ export function matchesSpec(spec, query, stage, epics, adrs) {
     if (key === "ai") return value === "off" ? !spec.ai : Boolean(spec.ai);
     if (key === "blocked")
       return value === "off"
-        ? !blocked(spec, adrs).length
-        : Boolean(blocked(spec, adrs).length);
+        ? !blocked(spec, adrs, taskById).length
+        : Boolean(blocked(spec, adrs, taskById).length);
     if (key === "epic")
       return `${spec.epic || "none"} ${epics.find((e) => e.id === spec.epic)?.t || ""}`
         .toLowerCase()

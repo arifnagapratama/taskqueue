@@ -38,6 +38,7 @@ class TaskInput(Model):
     epic_id: str | None = None
     adr_ids: list[str] = Field(default_factory=list)
     blocked_by_adr_ids: list[str] = Field(default_factory=list)
+    depends_on: list[str] = Field(default_factory=list, description="Prerequisite task IDs in the same project.")
     labels: list[str] = Field(default_factory=list)
     acceptance_tests: list[AcceptanceTest] = Field(default_factory=list)
 
@@ -145,6 +146,7 @@ def entity_view(kind, item):
     return Task(task_id=item["id"], priority=item["priority"], task_kind=item["kind"],
                 description=item["d"], epic_id=item.get("epic") or None,
                 adr_ids=item["adrs"], blocked_by_adr_ids=item["bl"], labels=item["l"],
+                depends_on=item["depends_on"],
                 acceptance_tests=[test_view(test) for test in item["ac"]],
                 assignment=Assignment(agent=ai["agent"], started_at=ai["since"], step=ai["step"]) if ai else None,
                 history=[HistoryEntry(timestamp=t, actor=actor, message=message) for t, actor, message in item["log"]], **common)
@@ -159,6 +161,7 @@ def to_storage(entity):
                         "cons": entity.consequences, "sup": entity.supersedes_adr_id or "", **common}
     return "specs", {"id": entity.task_id, "d": entity.description, "epic": entity.epic_id or "",
                      "priority": entity.priority, "kind": entity.task_kind,
+                     "depends_on": entity.depends_on,
                      "adrs": entity.adr_ids, "bl": entity.blocked_by_adr_ids, "l": entity.labels, "log": [],
                      "ac": [{"id": test.test_id, "t": test.title, "st": test.status, "mode": test.mode,
                              "ref": test.reference, "steps": test.steps, "run": test.last_run_at}
