@@ -5,7 +5,7 @@
   import SpecTable from './components/SpecTable.svelte';
   import EntityTables from './components/EntityTables.svelte';
   import DetailPanel from './components/DetailPanel.svelte';
-  import { ADR_STATUS, blocked, matchesEntity, matchesSpec } from './lib/helpers.js';
+  import { ADR_STATUS, STATUS, blocked, matchesEntity, matchesSpec } from './lib/helpers.js';
 
   let token = readToken();
   let tokenInput = '';
@@ -257,7 +257,7 @@
   $: visibleEpics = epics.filter((epic) => matchesEntity(epic, query, statusFilter));
   $: visibleAdrs = adrs.filter((adr) => matchesEntity(adr, query, statusFilter));
   $: counts = { specs: specs.length, epics: epics.length, adrs: adrs.length };
-  $: statusText = `In progress ${specs.filter((spec) => spec.s === 'in_progress').length}  ·  Todo ${specs.filter((spec) => spec.s === 'todo').length}  ·  Finished ${specs.filter((spec) => spec.s === 'finished').length}  ·  Blocked ${specs.filter((spec) => blocked(spec, adrs).length).length}  ·  AI active ${specs.filter((spec) => spec.ai).length}  ·  Showing ${visibleSpecs.length}/${specs.length}`;
+  $: statusText = `${Object.entries(STATUS).map(([status, label]) => `${label} ${specs.filter((spec) => spec.s === status).length}`).join(' · ')}  ·  Blocked ${specs.filter((spec) => blocked(spec, adrs).length).length}  ·  AI active ${specs.filter((spec) => spec.ai).length}  ·  Showing ${visibleSpecs.length}/${specs.length}`;
 
   function changeView(nextView, id = null) {
     view = nextView;
@@ -285,7 +285,7 @@
     if (target < 0 || target >= specs.length) return;
     specs.splice(index, 1);
     specs.splice(target, 0, item);
-    updateDetail(`priority ${direction < 0 ? 'raised' : 'lowered'}`);
+    updateDetail(`moved ${direction < 0 ? 'up' : 'down'} in stage`);
   }
 
   function toggleTheme() {
@@ -389,7 +389,7 @@
 
 <div class="status mono">
   <span>{view === 'specs' ? statusText : view === 'epics' ? `Open ${epics.filter((item) => item.s === 'OPEN').length} · Closed ${epics.filter((item) => item.s === 'CLOSED').length} · Showing ${visibleEpics.length}/${epics.length}` : `${ADR_STATUS.map((status) => `${status} ${adrs.filter((item) => item.s === status).length}`).join(' · ')} · Showing ${visibleAdrs.length}/${adrs.length}`}</span>
-  <span class="sp"></span><span><kbd>j</kbd><kbd>k</kbd> select</span><span><kbd>Alt</kbd>+<kbd>↑↓</kbd> priority</span><span><kbd>Esc</kbd> close</span><span role="status">{saving ? 'Saving…' : failedSnapshot ? 'Unsaved changes' : 'SQLite'}</span>
+  <span class="sp"></span><span><kbd>j</kbd><kbd>k</kbd> select</span><span><kbd>Alt</kbd>+<kbd>↑↓</kbd> reorder</span><span><kbd>Esc</kbd> close</span><span role="status">{saving ? 'Saving…' : failedSnapshot ? 'Unsaved changes' : 'SQLite'}</span>
 </div>
 
 {/if}

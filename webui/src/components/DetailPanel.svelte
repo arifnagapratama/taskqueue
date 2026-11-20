@@ -5,12 +5,16 @@
   import { onMount } from "svelte";
   import {
     ADR_STATUS,
+    DEFAULT_PRIORITY,
+    DEFAULT_TASK_KIND,
     EPIC_STATUS,
-    ORDER,
     STATUS,
+    TASK_KINDS,
     blocked,
     duration,
+    epicRollup,
     fmt,
+    taskStatusTone,
   } from "../lib/helpers.js";
   import MarkdownField from "./MarkdownField.svelte";
 
@@ -37,6 +41,10 @@
   let openAdrConsequences = true;
   let openAdrSpecs = true;
   let fullscreen = false;
+  const taskFields = [
+    { key: "priority", label: "Priority", fallback: DEFAULT_PRIORITY, pattern: "P(0|[1-9][0-9]*)", hint: "Use P0, P1, P2, or a higher number." },
+    { key: "kind", label: "Kind", fallback: DEFAULT_TASK_KIND, pattern: "[a-z][a-z0-9]*(?:-[a-z0-9]+)*", hint: "Use lowercase letters, numbers, and hyphens, starting with a letter." },
+  ];
 
   $: if (!item) fullscreen = false;
 
@@ -56,24 +64,12 @@
   });
 
   $: blockedBy = view === "specs" && item ? blocked(item, adrs) : [];
-  $: activeSpecs =
-    view === "epics" && item
-      ? specs.filter((spec) => spec.epic === item.id)
-      : [];
+  $: rollup = view === "epics" && item ? epicRollup(item, specs) : null;
+  $: activeSpecs = rollup?.specs ?? [];
   $: relatedSpecs =
     view === "adrs" && item
       ? specs.filter((spec) => spec.adrs.includes(item.id))
       : [];
-  $: rollup =
-    view === "epics" && item
-      ? {
-          done: activeSpecs.filter((spec) => spec.s === "finished").length,
-          active: activeSpecs.filter((spec) => spec.s === "in_progress").length,
-          todo: activeSpecs.filter((spec) => spec.s === "todo").length,
-          tests: activeSpecs.flatMap((spec) => spec.ac),
-          agents: activeSpecs.filter((spec) => spec.ai).length,
-        }
-      : null;
 
   function changed(message) {
     item.u = Date.now();
@@ -83,6 +79,19 @@
   function setStatus(value) {
     item.s = value;
     changed(`status → ${value}`);
+  }
+
+  function updateTaskField(event, field) {
+    const input = event.currentTarget;
+    input.value = input.value.trim();
+    if (!input.validity.valid) {
+      input.setAttribute("aria-invalid", "true");
+      return;
+    }
+    input.removeAttribute("aria-invalid");
+    if (input.value === (item[field.key] ?? field.fallback)) return;
+    item[field.key] = input.value;
+    changed(`${field.key} → ${input.value}`);
   }
 
   function setSupersedes(event) {
@@ -243,13 +252,38 @@
             onchange={updateTitle}
           ></textarea>
           <div class="kv">
-            <span>Status</span><select
+            <label for="task-status">Status</label><select
+              id="task-status"
               value={item.s}
+              disabled={Boolean(item.ai)}
+              title={item.ai ? "The assigned agent must release the task to change its status." : undefined}
               onchange={(e) => setStatus(e.currentTarget.value)}
-              >{#each ORDER as status}<option value={status}
-                  >{STATUS[status]}</option
+              >{#each Object.entries(STATUS) as [status, label]}<option value={status}
+                  >{label}</option
                 >{/each}</select
             >
+            {#key item.id}
+              {#each taskFields as field}
+                <label for="task-{field.key}">{field.label}</label>
+                <div class="task-field">
+                  <input
+                    id="task-{field.key}"
+                    class:mono={field.key === "priority"}
+                    list={field.key === "kind" ? "task-kind-options" : undefined}
+                    pattern={field.pattern}
+                    required
+                    spellcheck="false"
+                    value={item[field.key] ?? field.fallback}
+                    aria-describedby="task-{field.key}-hint"
+                    onchange={(event) => updateTaskField(event, field)}
+                  />
+                  <span id="task-{field.key}-hint" class="task-field-error" role="alert">{field.hint}</span>
+                </div>
+              {/each}
+            {/key}
+            <datalist id="task-kind-options">
+              {#each TASK_KINDS as kind}<option value={kind}></option>{/each}
+            </datalist>
             <span>Labels</span><input
               class="mono"
               value={item.l.join(", ")}
@@ -482,11 +516,9 @@
         {#if rollup}<div class="sec">
             <div class="kv mono">
               <span>Tasks</span><span
-                >{rollup.done} finished · {rollup.active} in progress · {rollup.todo}
-                todo</span
+                >{rollup.done} finished · {rollup.active} in progress · {rollup.verify} verify · {rollup.todo} todo · {rollup.deferred} deferred</span
               ><span>Tests</span><span
-                >{rollup.tests.filter((test) => test.st === "pass")
-                  .length}/{rollup.tests.length} passing</span
+                >{rollup.passed}/{rollup.totalTests} passing</span
               ><span>AI</span><span>{rollup.agents} active</span>
             </div>
           </div>
@@ -508,7 +540,7 @@
                 >
                   <span class="mono lbl">{spec.id}</span><span class="ti"
                     >{spec.t}</span
-                  ><Badge tone={spec.s === "finished" ? "success" : spec.s === "in_progress" ? "warning" : "neutral"} class="p-{spec.s}">{STATUS[spec.s]}</Badge>
+                  ><Badge tone={taskStatusTone(spec.s)}>{STATUS[spec.s]}</Badge>
                 </div>{/each}
             </div>{/if}
           {@const epicAdrs = [
@@ -645,7 +677,7 @@
               >
                 <span class="mono lbl">{spec.id}</span><span class="ti"
                   >{spec.t}</span
-                ><Badge tone={spec.s === "finished" ? "success" : spec.s === "in_progress" ? "warning" : "neutral"} class="p-{spec.s}">{STATUS[spec.s]}</Badge>
+                ><Badge tone={taskStatusTone(spec.s)}>{STATUS[spec.s]}</Badge>
               </div>{/each}
           </div>{/if}
       </div>

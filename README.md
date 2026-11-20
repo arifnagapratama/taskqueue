@@ -198,9 +198,16 @@ sample data can be loaded explicitly through the UI. Agents can list/read
 projects and use `upsert_entity` to create or update tasks, epics and ADRs.
 Read the project revision before editing: stale writes are rejected.
 Use `claim_task` to start work; unresolved ADR blockers, existing claims and
-finished tasks prevent claiming. `report_test` records acceptance results.
-`release_task` clears the claim; finishing requires all defined tests to pass.
+deferred or finished tasks prevent claiming. `report_test` records acceptance results.
+`release_task` clears the claim and can set `deferred`, `todo`, `verify`, or
+`finished`. Finishing requires all defined tests to pass.
 Generic agent names default to `ai-agent`. MCP and REST share the same database.
+
+Task statuses are `deferred`, `todo`, `in_progress`, `verify`, and `finished`.
+Task `priority` accepts `P0`, `P1`, and higher numbers, and defaults to `P2`.
+Task categories such as `feature`, `bug`, or `docs` use lowercase slugs and default
+to `other`. In MCP, pass the category as `task_kind` because `kind: "task"`
+identifies the entity type. In the REST state, the task category is `kind`.
 
 MCP uses descriptive field names (`task_id`, `title`, `status`, `description`,
 `blocked_by_adr_ids`, `acceptance_tests`, `assignment`, `history`).

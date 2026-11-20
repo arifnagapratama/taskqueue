@@ -4,10 +4,24 @@ import os
 import re
 import sqlite3
 from pathlib import Path
+from typing import get_args
+
+from backend.contracts import (
+    DEFAULT_PRIORITY, DEFAULT_TASK_KIND, PRIORITY_PATTERN, TASK_KIND_PATTERN, TaskStatus,
+)
 
 DB_PATH = Path(os.environ.get("DATABASE_PATH", "data/task-queue.sqlite3"))
 STATIC_PATH = os.environ.get("STATIC_PATH", "/app/dist")
 KINDS = ("specs", "epics", "adrs")
+TASK_METADATA = {
+    "priority": (DEFAULT_PRIORITY, PRIORITY_PATTERN),
+    "kind": (DEFAULT_TASK_KIND, TASK_KIND_PATTERN),
+}
+STATUSES = {
+    "specs": get_args(TaskStatus),
+    "epics": ("OPEN", "CLOSED"),
+    "adrs": ("PROPOSED", "ACCEPTED", "SUPERSEDED", "DEPRECATED"),
+}
 _change_listeners = set()
 
 
@@ -63,14 +77,17 @@ def validate_state(state):
             indexes[kind].add(item["id"])
             if not isinstance(item.get("t"), str) or not item["t"].strip():
                 raise ValueError("Each entity needs a title")
-            statuses = {"specs": ("todo", "in_progress", "finished"), "epics": ("OPEN", "CLOSED"),
-                        "adrs": ("PROPOSED", "ACCEPTED", "SUPERSEDED", "DEPRECATED")}
-            if item.get("s") not in statuses[kind]:
+            if item.get("s") not in STATUSES[kind]:
                 raise ValueError(f"Invalid {kind} status")
             text_keys = {"specs": ("d",), "epics": ("d",), "adrs": ("ctx", "dec", "cons")}
             if any(not isinstance(item.get(key), str) for key in text_keys[kind]):
                 raise ValueError("Invalid description fields")
             if kind == "specs":
+                for field, (_, pattern) in TASK_METADATA.items():
+                    if field in item and (
+                        not isinstance(item[field], str) or not re.fullmatch(pattern, item[field])
+                    ):
+                        raise ValueError(f"Invalid task {field}")
                 for key in ("l", "adrs", "bl"):
                     if not isinstance(item.get(key), list) or any(not isinstance(v, str) for v in item[key]):
                         raise ValueError(f"{key} must contain strings")
@@ -128,7 +145,11 @@ def read_state(db, project_id):
     state = {kind: [] for kind in KINDS}
     state["revision"] = project["revision"]
     for row in db.execute("SELECT kind,payload FROM entities WHERE project_id=? ORDER BY position", (project_id,)):
-        state[row["kind"]].append(json.loads(row["payload"]))
+        item = json.loads(row["payload"])
+        if row["kind"] == "specs":
+            for field, (default, _) in TASK_METADATA.items():
+                item.setdefault(field, default)
+        state[row["kind"]].append(item)
     return state
 
 
@@ -148,6 +169,11 @@ def write_state(db, project_id, state):
     current = read_state(db, project_id)
     if state["revision"] != current["revision"]:
         raise StoreError(409, "Project changed in another session. Reload before editing.")
+    current_tasks = {task["id"]: task for task in current["specs"]}
+    for task in state["specs"]:
+        previous = current_tasks.get(task["id"], {})
+        for field, (default, _) in TASK_METADATA.items():
+            task.setdefault(field, previous.get(field, default))
     db.execute("DELETE FROM entities WHERE project_id=?", (project_id,))
     for kind in KINDS:
         db.executemany("INSERT INTO entities VALUES (?,?,?,?,?)", [

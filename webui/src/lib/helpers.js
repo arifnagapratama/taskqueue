@@ -1,12 +1,25 @@
 export const STATUS = {
-  in_progress: "IN PROGRESS",
+  deferred: "DEFERRED",
   todo: "TODO",
+  in_progress: "IN PROGRESS",
+  verify: "VERIFY",
   finished: "FINISHED",
 };
 
-export const ORDER = ["in_progress", "todo", "finished"];
+export const ORDER = ["in_progress", "verify", "todo", "deferred", "finished"];
+export const DEFAULT_PRIORITY = "P2";
+export const DEFAULT_TASK_KIND = "other";
+export const TASK_KINDS = ["feature", "bug", "docs", "refactor", "test", "chore", "other"];
 export const EPIC_STATUS = ["OPEN", "CLOSED"];
 export const ADR_STATUS = ["PROPOSED", "ACCEPTED", "SUPERSEDED", "DEPRECATED"];
+
+export function taskStatusTone(status) {
+  return {
+    in_progress: "info",
+    verify: "warning",
+    finished: "success",
+  }[status] ?? "neutral";
+}
 
 export function fmt(value, seconds = false) {
   const date = new Date(value);
@@ -45,8 +58,10 @@ export function parseFilter(query) {
 export function matchesSpec(spec, query, stage, epics, adrs) {
   if (stage !== "all" && spec.s !== stage) return false;
   return parseFilter(query).every(({ key, value }) => {
+    const priority = (spec.priority ?? DEFAULT_PRIORITY).toLowerCase();
+    const kind = spec.kind ?? DEFAULT_TASK_KIND;
     if (!key)
-      return `${spec.t} ${spec.id} ${spec.epic || ""} ${(spec.adrs || []).join(" ")} ${(spec.l || []).join(" ")}`
+      return `${spec.t} ${spec.id} ${spec.epic || ""} ${(spec.adrs || []).join(" ")} ${(spec.l || []).join(" ")} ${priority} ${kind}`
         .toLowerCase()
         .includes(value);
     if (key === "label")
@@ -54,6 +69,8 @@ export function matchesSpec(spec, query, stage, epics, adrs) {
         label.toLowerCase().includes(value),
       );
     if (key === "status") return spec.s.includes(value);
+    if (key === "priority") return priority === value;
+    if (key === "kind") return kind === value;
     if (key === "ai") return value === "off" ? !spec.ai : Boolean(spec.ai);
     if (key === "blocked")
       return value === "off"
@@ -86,6 +103,8 @@ export function epicRollup(epic, specs) {
     done: linked.filter((spec) => spec.s === "finished").length,
     active: linked.filter((spec) => spec.s === "in_progress").length,
     todo: linked.filter((spec) => spec.s === "todo").length,
+    verify: linked.filter((spec) => spec.s === "verify").length,
+    deferred: linked.filter((spec) => spec.s === "deferred").length,
     passed: tests.filter((test) => test.st === "pass").length,
     failed: tests.filter((test) => test.st === "fail").length,
     totalTests: tests.length,

@@ -1,7 +1,7 @@
 <script>
   import Button from "../design-system/Button.svelte";
   import Icon from "./Icon.svelte";
-  import { ADR_STATUS, EPIC_STATUS } from "../lib/helpers.js";
+  import { ADR_STATUS, EPIC_STATUS, STATUS } from "../lib/helpers.js";
 
   export let projects = [];
   export let projectId = '';
@@ -21,7 +21,7 @@
 
   $: filterHelp =
     view === "specs"
-      ? "Search tasks: auth, label:backend, status:todo, epic:03, adr:004, ai:on, blocked:on"
+      ? "Search tasks: auth, priority:P0, kind:bug, label:backend, status:verify, epic:03, adr:004, ai:on, blocked:on"
       : view === "epics"
         ? "Search epics: auth, status:open"
         : "Search ADRs: keycloak, status:proposed";
@@ -56,11 +56,10 @@
       value={stage}
       onchange={(e) => onstage(e.currentTarget.value)}
     >
-      <option value="all">Stage: All</option><option value="in_progress"
-        >Stage: In progress</option
-      ><option value="todo">Stage: Todo</option><option value="finished"
-        >Stage: Finished</option
-      >
+      <option value="all">Stage: All</option>
+      {#each Object.entries(STATUS) as [status, label]}
+        <option value={status}>Stage: {label}</option>
+      {/each}
     </select>
   {:else}
     <select

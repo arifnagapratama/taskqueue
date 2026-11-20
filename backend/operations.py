@@ -1,7 +1,9 @@
 """MCP tools use the same transactions and validation as the UI API."""
 import time
+from typing import get_args
 
 from backend import store
+from backend.contracts import ReleaseStatus
 
 
 
@@ -16,7 +18,7 @@ def create_project(project_id: str, name: str) -> dict:
 
 
 def get_project(project_id: str) -> dict:
-    """Read tasks, epics, ADRs, priority order and the current project revision."""
+    """Read tasks in queue order, epics, ADRs and the current project revision."""
     return store.get_state(project_id)
 
 
@@ -54,15 +56,15 @@ def upsert_entity(project_id: str, kind: str, entity: dict, revision: int) -> di
 
 
 def claim_task(project_id: str, task_id: str, agent: str = "ai-agent", step: str = "") -> dict:
-    """Atomically claim an unassigned task. Reject unresolved ADR blockers and finished tasks."""
+    """Atomically claim an unassigned task that is neither blocked, deferred nor finished."""
     if not agent.strip():
         raise store.StoreError(400, "Agent name is required")
 
     def operation(state):
         task = find_task(state, task_id)
         accepted = {adr["id"] for adr in state["adrs"] if adr["s"] == "ACCEPTED"}
-        if task.get("ai") or task["s"] == "finished" or any(id not in accepted for id in task["bl"]):
-            raise store.StoreError(409, "Task is claimed, finished, or blocked")
+        if task.get("ai") or task["s"] in ("deferred", "finished") or any(id not in accepted for id in task["bl"]):
+            raise store.StoreError(409, "Task is claimed, deferred, finished, or blocked")
         now = int(time.time() * 1000)
         task.update(s="in_progress", u=now, ai={"agent": agent, "since": now, "step": step})
         task["log"].insert(0, [now, agent, "AI claimed task"])
@@ -78,10 +80,10 @@ def find_task(state, task_id):
     return task
 
 
-def release_task(project_id: str, task_id: str, agent: str, status: str = "todo") -> dict:
-    """Release your claim and set todo or finished; finished requires all acceptance tests passing."""
-    if status not in ("todo", "finished"):
-        raise store.StoreError(400, "Status must be todo or finished")
+def release_task(project_id: str, task_id: str, agent: str, status: ReleaseStatus = "todo") -> dict:
+    """Release a claim and optionally send it to verification, defer it or finish it."""
+    if status not in get_args(ReleaseStatus):
+        raise store.StoreError(400, "Release status must be deferred, todo, verify, or finished")
 
     def operation(state):
         task = find_task(state, task_id)

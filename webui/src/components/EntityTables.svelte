@@ -35,7 +35,7 @@
   <table id="tblE">
     <colgroup
       ><col style="width:116px" /><col style="width:320px" /><col style="width:152px" /><col
-        style="width:260px"
+        style="width:405px"
       /><col style="width:168px" /><col style="width:188px" /></colgroup
     >
     <thead
@@ -48,6 +48,7 @@
     <tbody>
       {#each items as epic (epic.id)}
         {@const rollup = epicRollup(epic, specs)}
+        {@const taskSummary = `${rollup.done} done · ${rollup.active} active · ${rollup.verify} verify · ${rollup.todo} todo · ${rollup.deferred} deferred`}
         <tr
           class="row"
           class:sel={selected === epic.id}
@@ -58,8 +59,8 @@
           <td class="mono" title={epic.id}>{epic.id}</td><td title={epic.t}>{epic.t}</td><td
             ><Badge tone={epic.s === "CLOSED" ? "success" : "neutral"} class="p-{epic.s.toLowerCase()}">{epic.s}</Badge></td
           >
-          <td class="mono"
-            >{rollup.done} done · {rollup.active} active · {rollup.todo} todo{#if rollup.agents}<span
+          <td class="mono" title={taskSummary}
+            >{taskSummary}{#if rollup.agents}<span
                 class="ai"><i class="pulse"></i>{rollup.agents}</span
               >{/if}</td
           >

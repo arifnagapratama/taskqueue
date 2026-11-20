@@ -136,15 +136,54 @@ def test_mcp_project_header(client):
     assert "project_id" in tools["create_project"]["required"]
 
     task = {"kind": "task", "task_id": "TASK-1", "title": "Header task",
+            "priority": "P12", "task_kind": "bug",
             "acceptance_tests": [{"test_id": "AT-1", "title": "Check header project"}]}
     assert call("upsert_entity", revision=0, entity=task)["revision"] == 1
     assert call("claim_task", task_id="TASK-1")["ok"]
     assert call("report_test", task_id="TASK-1", test_id="AT-1", status="pass", agent="ai-agent")["ok"]
+    verifying = call("release_task", task_id="TASK-1", agent="ai-agent", status="verify")
+    assert verifying["data"]["status"] == "verify"
+    assert verifying["data"]["assignment"] is None
+    assert call("claim_task", task_id="TASK-1")["ok"]
     assert call("release_task", task_id="TASK-1", agent="ai-agent", status="finished")["ok"]
-    assert call("get_project")["data"]["project_id"] == "header-project"
+    snapshot = call("get_project")
+    assert snapshot["data"]["project_id"] == "header-project"
+    assert snapshot["data"]["tasks"][0]["priority"] == "P12"
+    assert snapshot["data"]["tasks"][0]["task_kind"] == "bug"
+    assert call("upsert_entity", revision=snapshot["revision"], entity={
+        "kind": "task", "task_id": "TASK-1", "title": "Deferred task", "status": "deferred",
+    })["data"]["priority"] == "P12"
+    assert call("claim_task", task_id="TASK-1")["error"]["code"] == "conflict"
     assert call("get_project", project_id="default")["data"]["project_id"] == "default"
     assert call("get_project", project="unknown-project")["error"]["code"] == "not_found"
     assert call("get_project", project=None)["error"]["code"] == "invalid_input"
+
+
+def test_task_metadata_rest_and_legacy_rows(client):
+    import json
+
+    store.create_project("legacy-task", "Legacy task")
+    task = {"id": "TASK-1", "t": "Existing task", "s": "todo", "d": "",
+            "adrs": [], "bl": [], "l": [], "log": [], "ac": []}
+    with store.connect() as db:
+        db.execute("INSERT INTO entities VALUES (?, ?, ?, ?, ?)",
+                   ("legacy-task", "specs", task["id"], 0, json.dumps(task)))
+    url = "/api/projects/legacy-task/state"
+    state = client.get(url).json()
+    saved_task = state["specs"][0]
+    assert state["revision"] == 0
+    assert (saved_task["priority"], saved_task["kind"]) == ("P2", "other")
+
+    saved_task.update(priority="P01", kind="feature", s="verify")
+    assert client.put(url, json=state).status_code == 400
+    saved_task.update(priority="P0", kind="two words")
+    assert client.put(url, json=state).status_code == 400
+    saved_task.update(priority="P0", kind="integration-test")
+    assert client.put(url, json=state).json() == {"revision": 1}
+    state.update(revision=1, specs=[dict(task, s="deferred")])
+    assert client.put(url, json=state).json() == {"revision": 2}
+    saved = client.get(url).json()["specs"][0]
+    assert (saved["priority"], saved["kind"], saved["s"]) == ("P0", "integration-test", "deferred")
 
 
 @pytest.mark.parametrize("path", ["/api/health", "/api/projects", "/mcp/", "/docs", "/openapi.json"])

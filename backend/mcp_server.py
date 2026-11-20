@@ -13,7 +13,7 @@ from starlette.requests import Request
 
 from backend import store, operations
 from backend.contracts import (
-    Entity, EntityInput, Error, Project, ProjectList, ProjectState, Result,
+    Entity, EntityInput, Error, Project, ProjectList, ProjectState, ReleaseStatus, Result,
     Task, TestReport, entity_view, test_view, to_storage,
 )
 
@@ -108,6 +108,10 @@ def upsert_entity(entity: EntityInput, revision: int, ctx: Context,
         current = next((e for e in state[kind] if e["id"] == item["id"]), None)
         if kind == "specs":
             item["log"] = list((current or {}).get("log", []))
+            if current:
+                for field, storage_key in (("priority", "priority"), ("task_kind", "kind")):
+                    if field not in entity.model_fields_set:
+                        item[storage_key] = current[storage_key]
             if current and current.get("ai"):
                 item["ai"] = current["ai"]
                 if item["s"] != "in_progress":
@@ -120,7 +124,7 @@ def upsert_entity(entity: EntityInput, revision: int, ctx: Context,
 @mcp.tool(annotations=WRITE)
 def claim_task(task_id: str, ctx: Context, agent: str = "ai-agent", step: str = "",
                project_id: str | None = None) -> Annotated[CallToolResult, Result[Task]]:
-    """Claim an unassigned task without unresolved ADR blockers. Defaults to the x-project-id header."""
+    """Claim an unassigned, active task without unresolved ADR blockers. Defaults to x-project-id."""
     def operation():
         result = operations.claim_task(resolve_project_id(project_id, ctx), task_id, agent, step)
         return entity_view("specs", result["result"]), result["revision"]
@@ -128,7 +132,7 @@ def claim_task(task_id: str, ctx: Context, agent: str = "ai-agent", step: str = 
 
 
 @mcp.tool(annotations=WRITE)
-def release_task(task_id: str, agent: str, ctx: Context, status: Literal["todo", "finished"] = "todo",
+def release_task(task_id: str, agent: str, ctx: Context, status: ReleaseStatus = "todo",
                  project_id: str | None = None) -> Annotated[CallToolResult, Result[Task]]:
     """Release your claim. Finishing requires passing tests. Defaults to the x-project-id header."""
     def operation():

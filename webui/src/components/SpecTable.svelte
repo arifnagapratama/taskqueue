@@ -2,7 +2,7 @@
   import Button from "../design-system/Button.svelte";
   import Badge from "../design-system/Badge.svelte";
   import Icon from "./Icon.svelte";
-  import { ORDER, STATUS, blocked, fmt, testPercent } from "../lib/helpers.js";
+  import { DEFAULT_PRIORITY, DEFAULT_TASK_KIND, ORDER, STATUS, blocked, fmt, taskStatusTone, testPercent } from "../lib/helpers.js";
   export let specs = [];
   export let adrs = [];
   export let selected = null;
@@ -22,24 +22,27 @@
   <colgroup id="cg"
     ><col style="width:44px" /><col style="width:116px" /><col
       style="width:380px"
-    /><col style="width:110px" /><col style="width:180px" /><col
+    /><col style="width:88px" /><col style="width:120px" /><col
+      style="width:110px" /><col style="width:180px" /><col
       style="width:128px"
     /><col style="width:150px" /><col style="width:188px" /></colgroup
   >
   <thead
     ><tr
-      ><th style="text-align:right">#</th><th>ID</th><th>Task</th><th>Epic</th
+      ><th style="text-align:right">#</th><th>ID</th><th>Task</th><th>Priority</th><th>Kind</th><th>Epic</th
       ><th>Status</th><th>Tests</th><th>Labels</th><th>Updated</th></tr
     ></thead
   >
   <tbody>
     {#each groups as section (section.key)}
-      <tr class="grp" onclick={() => ontoggle(section.key)}
-        ><td colspan="8"
-          ><Icon name={collapsed[section.key] ? "chevron_right" : "expand_more"} />
-          {section.label}<span class="n">{section.specs.length}</span></td
-        ></tr
-      >
+      <tr class="grp">
+        <td colspan="10">
+          <Button variant="unstyled" class="group-toggle" aria-expanded={!collapsed[section.key]} onclick={() => ontoggle(section.key)}>
+            <Icon name={collapsed[section.key] ? "chevron_right" : "expand_more"} />
+            {section.label}<span class="n">{section.specs.length}</span>
+          </Button>
+        </td>
+      </tr>
       {#if !collapsed[section.key]}
         {#each section.specs as spec, index (spec.id)}
           {@const pass = spec.ac.filter((test) => test.st === "pass").length}
@@ -56,6 +59,8 @@
             <td class="rank mono">{spec.s === "finished" ? "" : index + 1}</td>
             <td class="mono" title={spec.id}>{spec.id}</td>
             <td title={spec.t}>{spec.t}</td>
+            <td class="mono" title={spec.priority ?? DEFAULT_PRIORITY}>{spec.priority ?? DEFAULT_PRIORITY}</td>
+            <td title={spec.kind ?? DEFAULT_TASK_KIND}>{spec.kind ?? DEFAULT_TASK_KIND}</td>
             <td
               >{#if spec.epic}<Button variant="unstyled"
                   type="button"
@@ -67,7 +72,7 @@
                 >{:else}<span class="lbl">—</span>{/if}</td
             >
             <td class="st"
-              ><Badge tone={spec.s === "finished" ? "success" : spec.s === "in_progress" ? "warning" : "neutral"} class="p-{spec.s}">{STATUS[spec.s]}</Badge>
+              ><Badge tone={taskStatusTone(spec.s)}>{STATUS[spec.s]}</Badge>
               {#if spec.ai}<span
                   class="ai"
                   title="{spec.ai.agent}: {spec.ai.step}"

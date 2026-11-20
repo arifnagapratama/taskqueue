@@ -3,6 +3,16 @@ from typing import Annotated, Generic, Literal, TypeVar
 from pydantic import BaseModel, ConfigDict, Field
 
 
+TaskStatus = Literal["deferred", "todo", "in_progress", "verify", "finished"]
+ReleaseStatus = Literal["deferred", "todo", "verify", "finished"]
+PRIORITY_PATTERN = r"^P(?:0|[1-9][0-9]*)$"
+TASK_KIND_PATTERN = r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+DEFAULT_PRIORITY = "P2"
+DEFAULT_TASK_KIND = "other"
+TaskPriority = Annotated[str, Field(pattern=PRIORITY_PATTERN)]
+TaskKind = Annotated[str, Field(pattern=TASK_KIND_PATTERN)]
+
+
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -21,7 +31,9 @@ class TaskInput(Model):
     kind: Literal["task"] = "task"
     task_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
-    status: Literal["todo", "in_progress", "finished"] = "todo"
+    status: TaskStatus = "todo"
+    priority: TaskPriority = DEFAULT_PRIORITY
+    task_kind: TaskKind = DEFAULT_TASK_KIND
     description: str = ""
     epic_id: str | None = None
     adr_ids: list[str] = Field(default_factory=list)
@@ -130,7 +142,8 @@ def entity_view(kind, item):
         return Adr(adr_id=item["id"], context=item["ctx"], decision=item["dec"],
                    consequences=item["cons"], supersedes_adr_id=item.get("sup") or None, **common)
     ai = item.get("ai")
-    return Task(task_id=item["id"], description=item["d"], epic_id=item.get("epic") or None,
+    return Task(task_id=item["id"], priority=item["priority"], task_kind=item["kind"],
+                description=item["d"], epic_id=item.get("epic") or None,
                 adr_ids=item["adrs"], blocked_by_adr_ids=item["bl"], labels=item["l"],
                 acceptance_tests=[test_view(test) for test in item["ac"]],
                 assignment=Assignment(agent=ai["agent"], started_at=ai["since"], step=ai["step"]) if ai else None,
@@ -145,6 +158,7 @@ def to_storage(entity):
         return "adrs", {"id": entity.adr_id, "ctx": entity.context, "dec": entity.decision,
                         "cons": entity.consequences, "sup": entity.supersedes_adr_id or "", **common}
     return "specs", {"id": entity.task_id, "d": entity.description, "epic": entity.epic_id or "",
+                     "priority": entity.priority, "kind": entity.task_kind,
                      "adrs": entity.adr_ids, "bl": entity.blocked_by_adr_ids, "l": entity.labels, "log": [],
                      "ac": [{"id": test.test_id, "t": test.title, "st": test.status, "mode": test.mode,
                              "ref": test.reference, "steps": test.steps, "run": test.last_run_at}
