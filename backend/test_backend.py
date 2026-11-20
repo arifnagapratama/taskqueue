@@ -113,6 +113,40 @@ def test_mcp_typed_contracts(client):
     assert store.get_state("typed")["revision"] == 2
 
 
+def test_mcp_project_header(client):
+    store.create_project("header-project", "Header project")
+
+    def rpc(method, params, project="header-project"):
+        headers = {"Accept": "application/json, text/event-stream"}
+        if project is not None:
+            headers["X-Project-ID"] = project
+        response = client.post("/mcp/", headers=headers, json={
+            "jsonrpc": "2.0", "id": 3, "method": method, "params": params,
+        })
+        assert response.status_code == 200
+        return response.json()["result"]
+
+    def call(name, project="header-project", **arguments):
+        return rpc("tools/call", {"name": name, "arguments": arguments}, project)["structuredContent"]
+
+    tools = {tool["name"]: tool["inputSchema"] for tool in rpc("tools/list", {})["tools"]}
+    for name in ("get_project", "upsert_entity", "claim_task", "release_task", "report_test"):
+        assert "project_id" not in tools[name].get("required", [])
+        assert "ctx" not in tools[name]["properties"]
+    assert "project_id" in tools["create_project"]["required"]
+
+    task = {"kind": "task", "task_id": "TASK-1", "title": "Header task",
+            "acceptance_tests": [{"test_id": "AT-1", "title": "Check header project"}]}
+    assert call("upsert_entity", revision=0, entity=task)["revision"] == 1
+    assert call("claim_task", task_id="TASK-1")["ok"]
+    assert call("report_test", task_id="TASK-1", test_id="AT-1", status="pass", agent="ai-agent")["ok"]
+    assert call("release_task", task_id="TASK-1", agent="ai-agent", status="finished")["ok"]
+    assert call("get_project")["data"]["project_id"] == "header-project"
+    assert call("get_project", project_id="default")["data"]["project_id"] == "default"
+    assert call("get_project", project="unknown-project")["error"]["code"] == "not_found"
+    assert call("get_project", project=None)["error"]["code"] == "invalid_input"
+
+
 @pytest.mark.parametrize("path", ["/api/health", "/api/projects", "/mcp/", "/docs", "/openapi.json"])
 def test_token_required(client, monkeypatch, tmp_path, path):
     token_file = tmp_path / "token"

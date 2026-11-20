@@ -100,7 +100,7 @@ Add this to `~/.codex/config.toml`, replacing `IP_SERVER`:
 ```toml
 [mcp_servers.taskqueue]
 url = "https://IP_SERVER:5443/mcp/"
-env_http_headers = { "x-api-token" = "TASKQUEUE_TOKEN" }
+env_http_headers = { "x-api-token" = "TASKQUEUE_TOKEN", "x-project-id" = "TASKQUEUE_PROJECT_ID" }
 ```
 
 Before starting Codex, export the token securely from your local secret file
@@ -108,6 +108,7 @@ and trust the copied public certificate:
 
 ```sh
 export TASKQUEUE_TOKEN="$(cat /absolute/path/taskqueue-token)"
+export TASKQUEUE_PROJECT_ID=example
 export TASKQUEUE_CERTS=/absolute/path/ca.crt
 export CODEX_CA_CERTIFICATE="$TASKQUEUE_CERTS"
 codex
@@ -117,7 +118,15 @@ Codex supports [headers from environment variables](https://learn.chatgpt.com/do
 and [custom PEM trust bundles](https://learn.chatgpt.com/docs/config-file/environment-variables).
 `TASKQUEUE_CERTS` is our convenience variable; `CODEX_CA_CERTIFICATE` is the
 Codex setting. TLS verification remains enabled. The client machine needs VPN
-connectivity to the server. Project selection uses the existing MCP tools.
+connectivity to the server.
+
+Set `TASKQUEUE_PROJECT_ID` to an existing project ID. You can then omit
+`project_id` from `get_project`, `upsert_entity`, `claim_task`,
+`release_task`, and `report_test`, without calling a discovery tool to find
+the project ID each run. An explicit `project_id` overrides the header.
+Remove the header mapping if you prefer to pass the ID on every call.
+`create_project` still takes the new project's ID explicitly, and
+`upsert_entity` still requires the current project revision.
 
 ## Backup, migration, restore and rollback
 
@@ -195,8 +204,8 @@ Generic agent names default to `ai-agent`. MCP and REST share the same database.
 
 MCP uses descriptive field names (`task_id`, `title`, `status`, `description`,
 `blocked_by_adr_ids`, `acceptance_tests`, `assignment`, `history`).
-`upsert_entity` accepts `project_id`, `revision` and a typed `entity` with
-`kind: task | epic | adr`. This replaces the earlier raw UI-field MCP contract.
+`upsert_entity` takes `revision` and a typed `entity` with `kind: task | epic | adr`.
+Pass `project_id` explicitly or configure the `x-project-id` header.
 Every tool advertises input/output JSON Schema and returns:
 
 ```json

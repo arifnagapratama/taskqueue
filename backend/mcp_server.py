@@ -5,9 +5,11 @@ import ipaddress
 import sqlite3
 from typing import Annotated, Literal
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
+
+from starlette.requests import Request
 
 from backend import store, operations
 from backend.contracts import (
@@ -28,9 +30,20 @@ def transport_security():
 
 
 mcp = FastMCP("Task Queue", stateless_http=True, json_response=True, streamable_http_path="/",
+              instructions="For project-scoped tools, omit project_id when the client sends x-project-id.",
               transport_security=transport_security())
 READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=False)
+
+
+def resolve_project_id(project_id: str | None, ctx: Context) -> str:
+    if project_id is None:
+        request = ctx.request_context.request
+        if isinstance(request, Request):
+            project_id = request.headers.get("x-project-id")
+    if project_id is None or not project_id.strip():
+        raise store.StoreError(400, "Provide project_id or configure the x-project-id HTTP header")
+    return project_id.strip()
 
 
 def respond(result_type, operation):
@@ -69,26 +82,29 @@ def create_project(project_id: str, name: str) -> Annotated[CallToolResult, Resu
 
 
 @mcp.tool(annotations=READ)
-def get_project(project_id: str) -> Annotated[CallToolResult, Result[ProjectState]]:
-    """Read project tasks in priority order, epics, ADRs and revision. Timestamps are Unix milliseconds."""
+def get_project(ctx: Context, project_id: str | None = None) -> Annotated[CallToolResult, Result[ProjectState]]:
+    """Read project tasks, epics, ADRs and revision. Defaults to the x-project-id header."""
     def operation():
-        state = store.get_state(project_id)
-        return ProjectState(project_id=project_id, tasks=[entity_view("specs", t) for t in state["specs"]],
+        selected_id = resolve_project_id(project_id, ctx)
+        state = store.get_state(selected_id)
+        return ProjectState(project_id=selected_id, tasks=[entity_view("specs", t) for t in state["specs"]],
                             epics=[entity_view("epics", e) for e in state["epics"]],
                             adrs=[entity_view("adrs", a) for a in state["adrs"]]), state["revision"]
     return respond(Result[ProjectState], operation)
 
 
 @mcp.tool(annotations=WRITE)
-def upsert_entity(project_id: str, entity: EntityInput, revision: int) -> Annotated[CallToolResult, Result[Entity]]:
+def upsert_entity(entity: EntityInput, revision: int, ctx: Context,
+                  project_id: str | None = None) -> Annotated[CallToolResult, Result[Entity]]:
     """Create or replace task/epic/adr editable fields at an expected project revision.
 
-    Choose entity.kind. Read get_project first. Task assignment and history are
+    Defaults to the x-project-id header. Use the current revision. Task assignment and history are
     server managed; use claim_task, report_test and release_task for AI work.
     """
     def operation():
+        selected_id = resolve_project_id(project_id, ctx)
         kind, item = to_storage(entity)
-        state = store.get_state(project_id)
+        state = store.get_state(selected_id)
         current = next((e for e in state[kind] if e["id"] == item["id"]), None)
         if kind == "specs":
             item["log"] = list((current or {}).get("log", []))
@@ -96,35 +112,36 @@ def upsert_entity(project_id: str, entity: EntityInput, revision: int) -> Annota
                 item["ai"] = current["ai"]
                 if item["s"] != "in_progress":
                     raise store.StoreError(409, "Use release_task to change a claimed task's status")
-        result = operations.upsert_entity(project_id, kind, item, revision)
+        result = operations.upsert_entity(selected_id, kind, item, revision)
         return entity_view(kind, result["result"]), result["revision"]
     return respond(Result[Entity], operation)
 
 
 @mcp.tool(annotations=WRITE)
-def claim_task(project_id: str, task_id: str, agent: str = "ai-agent", step: str = "") -> Annotated[CallToolResult, Result[Task]]:
-    """Atomically claim an unassigned task; rejects unresolved ADR blockers and finished tasks."""
+def claim_task(task_id: str, ctx: Context, agent: str = "ai-agent", step: str = "",
+               project_id: str | None = None) -> Annotated[CallToolResult, Result[Task]]:
+    """Claim an unassigned task without unresolved ADR blockers. Defaults to the x-project-id header."""
     def operation():
-        result = operations.claim_task(project_id, task_id, agent, step)
+        result = operations.claim_task(resolve_project_id(project_id, ctx), task_id, agent, step)
         return entity_view("specs", result["result"]), result["revision"]
     return respond(Result[Task], operation)
 
 
 @mcp.tool(annotations=WRITE)
-def release_task(project_id: str, task_id: str, agent: str,
-                 status: Literal["todo", "finished"] = "todo") -> Annotated[CallToolResult, Result[Task]]:
-    """Release your claim. Finishing requires all defined acceptance tests to pass."""
+def release_task(task_id: str, agent: str, ctx: Context, status: Literal["todo", "finished"] = "todo",
+                 project_id: str | None = None) -> Annotated[CallToolResult, Result[Task]]:
+    """Release your claim. Finishing requires passing tests. Defaults to the x-project-id header."""
     def operation():
-        result = operations.release_task(project_id, task_id, agent, status)
+        result = operations.release_task(resolve_project_id(project_id, ctx), task_id, agent, status)
         return entity_view("specs", result["result"]), result["revision"]
     return respond(Result[Task], operation)
 
 
 @mcp.tool(annotations=WRITE)
-def report_test(project_id: str, task_id: str, test_id: str,
-                status: Literal["pending", "pass", "fail"], agent: str) -> Annotated[CallToolResult, Result[TestReport]]:
-    """Record an acceptance test result for a task claimed by this agent."""
+def report_test(task_id: str, test_id: str, status: Literal["pending", "pass", "fail"], agent: str,
+                ctx: Context, project_id: str | None = None) -> Annotated[CallToolResult, Result[TestReport]]:
+    """Record a test result for your claimed task. Defaults to the x-project-id header."""
     def operation():
-        result = operations.report_test(project_id, task_id, test_id, status, agent)
+        result = operations.report_test(resolve_project_id(project_id, ctx), task_id, test_id, status, agent)
         return TestReport(task_id=task_id, test=test_view(result["result"])), result["revision"]
     return respond(Result[TestReport], operation)
