@@ -11,6 +11,7 @@ export const DEFAULT_PRIORITY = "P2";
 export const DEFAULT_TASK_KIND = "other";
 export const TASK_KINDS = ["feature", "bug", "docs", "refactor", "test", "chore", "other"];
 export const EPIC_STATUS = ["OPEN", "CLOSED"];
+export const RULE_STATUS = ["ACTIVE", "ARCHIVED"];
 export const ADR_STATUS = ["PROPOSED", "ACCEPTED", "SUPERSEDED", "DEPRECATED"];
 
 export function taskStatusTone(status) {
@@ -120,7 +121,7 @@ export function matchesEntity(entity, query, status) {
   if (status !== "all" && entity.s !== status) return false;
   const haystack = `${entity.id} ${entity.t}`.toLowerCase();
   return parseFilter(query).every(({ key, value }) =>
-    key === "status" ? entity.s.includes(value) : haystack.includes(value),
+    key === "status" ? entity.s.toLowerCase().includes(value) : haystack.includes(value),
   );
 }
 

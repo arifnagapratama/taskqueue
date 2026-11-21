@@ -30,6 +30,35 @@ def test_state_persistence_and_isolation(client):
     assert client.get("/api/projects/default/state").json()["revision"] == 1
 
 
+def test_project_rules_schema_migration(tmp_path, monkeypatch):
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "legacy.sqlite3")
+    with store.connect() as db:
+        db.executescript("""
+            CREATE TABLE projects (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE entities (
+                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL CHECK(kind IN ('specs','epics','adrs')),
+                id TEXT NOT NULL, position INTEGER NOT NULL, payload TEXT NOT NULL,
+                PRIMARY KEY(project_id,kind,id)
+            );
+            INSERT INTO projects VALUES ('legacy', 'Legacy', 7);
+            INSERT INTO entities VALUES
+                ('legacy', 'epics', 'EPIC-2', 0, '{"id":"EPIC-2","t":"Second","s":"OPEN","d":""}'),
+                ('legacy', 'epics', 'EPIC-1', 1, '{"id":"EPIC-1","t":"First","s":"OPEN","d":""}');
+            PRAGMA user_version=1;
+        """)
+    store.initialize()
+    store.initialize()
+    state = store.get_state("legacy")
+    assert state["revision"] == 7
+    assert [epic["id"] for epic in state["epics"]] == ["EPIC-2", "EPIC-1"]
+    assert state["rules"] == []
+    with store.connect() as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+
+
 def test_mcp_workflow(client):
     store.create_project("workflow", "Workflow")
     task = {"id": "TASK-1", "t": "Task", "s": "todo", "d": "", "epic": "", "adrs": ["ADR-1"],
@@ -111,6 +140,36 @@ def test_mcp_typed_contracts(client):
     }})
     assert malformed["isError"] is True
     assert store.get_state("typed")["revision"] == 2
+
+
+def test_project_rules_rest_and_mcp(client):
+    store.create_project("project-rules", "Project Rules")
+    url = "/api/projects/project-rules/state"
+
+    def call(name, **arguments):
+        response = client.post("/mcp/", headers={"Accept": "application/json, text/event-stream"}, json={
+            "jsonrpc": "2.0", "id": 43, "method": "tools/call",
+            "params": {"name": name, "arguments": dict(arguments, project_id="project-rules")},
+        })
+        return response.json()["result"]["structuredContent"]
+
+    rule = {"kind": "rule", "rule_id": "RULE-1", "title": "Review changes", "description": "Review before merging"}
+    created = call("upsert_entity", revision=0, entity=rule)
+    assert created["ok"] and created["data"]["status"] == "ACTIVE"
+    state = client.get(url).json()
+    assert state["rules"][0]["id"] == "RULE-1"
+    state["rules"][0]["s"] = "invalid"
+    assert client.put(url, json=state).status_code == 400
+    state["rules"][0]["s"] = "ARCHIVED"
+    assert client.put(url, json=state).json() == {"revision": 2}
+
+    state.update(revision=2)
+    del state["rules"]
+    assert client.put(url, json=state).json() == {"revision": 3}
+    rules = call("get_project")["data"]["rules"]
+    assert rules == [dict(created["data"], status="ARCHIVED")]
+    assert call("upsert_entity", revision=2, entity=rule)["error"]["code"] == "conflict"
+    assert client.get("/api/projects/default/state").json()["rules"] == []
 
 
 def test_mcp_project_header(client):

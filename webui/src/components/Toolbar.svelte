@@ -1,18 +1,19 @@
 <script>
   import Button from "../design-system/Button.svelte";
   import Icon from "./Icon.svelte";
-  import { ADR_STATUS, EPIC_STATUS, STATUS } from "../lib/helpers.js";
+  import { ADR_STATUS, EPIC_STATUS, RULE_STATUS, STATUS } from "../lib/helpers.js";
 
   export let projects = [];
   export let projectId = '';
   export let busy = false;
   export let onproject = () => {};
   export let oncreateproject = () => {};
+  export let oncreaterule = () => {};
   export let view = "specs";
   export let query = "";
   export let stage = "all";
   export let statusFilter = "all";
-  export let counts = { specs: 0, epics: 0, adrs: 0 };
+  export let counts = { specs: 0, epics: 0, adrs: 0, rules: 0 };
   export let onview = () => {};
   export let onquery = () => {};
   export let onstage = () => {};
@@ -24,9 +25,11 @@
       ? "Search tasks: auth, priority:P0, kind:bug, label:backend, status:verify, epic:03, adr:004, ai:on, blocked:on"
       : view === "epics"
         ? "Search epics: auth, status:open"
-        : "Search ADRs: keycloak, status:proposed";
-  $: placeholder = `Search ${view === "specs" ? "tasks" : view}…`;
-  $: statuses = view === "epics" ? EPIC_STATUS : ADR_STATUS;
+        : view === "rules"
+          ? "Search project rules: review, status:active"
+          : "Search ADRs: keycloak, status:proposed";
+  $: placeholder = `Search ${view === "specs" ? "tasks" : view === "rules" ? "project rules" : view}…`;
+  $: statuses = { epics: EPIC_STATUS, adrs: ADR_STATUS, rules: RULE_STATUS }[view];
 </script>
 
 <div class="bar">
@@ -36,7 +39,7 @@
   </select>
   <Button class="btn" disabled={busy} onclick={oncreateproject}><Icon name="add" /> Project</Button><span class="sep"></span>
   <div class="tabs" role="tablist" aria-label="Views">
-    {#each [["specs", "Tasks"], ["epics", "Epics"], ["adrs", "ADRs"]] as [key, label]}
+    {#each [["specs", "Tasks"], ["epics", "Epics"], ["adrs", "ADRs"], ["rules", "Rules"]] as [key, label]}
       <Button variant="unstyled"
         class={"tab" + (view === key ? " on" : "")}
         role="tab"
@@ -92,4 +95,7 @@
     value={query}
     oninput={(e) => onquery(e.currentTarget.value)}
   />
+  {#if view === "rules"}
+    <Button variant="primary" class="new-rule" disabled={busy || !projectId} onclick={oncreaterule}><Icon name="add" /> New rule</Button>
+  {/if}
 </div>

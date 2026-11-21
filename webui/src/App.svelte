@@ -5,7 +5,7 @@
   import SpecTable from './components/SpecTable.svelte';
   import EntityTables from './components/EntityTables.svelte';
   import DetailPanel from './components/DetailPanel.svelte';
-  import { ADR_STATUS, STATUS, blocked, matchesEntity, matchesSpec } from './lib/helpers.js';
+  import { ADR_STATUS, RULE_STATUS, STATUS, blocked, matchesEntity, matchesSpec } from './lib/helpers.js';
 
   let token = readToken();
   let tokenInput = '';
@@ -14,6 +14,7 @@
   let specs = [];
   let epics = [];
   let adrs = [];
+  let rules = [];
   let projects = [];
   let projectId = '';
   let revision = 0;
@@ -99,7 +100,7 @@
   function logout() {
     if ((saving || failedSnapshot) && !window.confirm('Sign out and discard unsaved changes?')) return;
     requireLogin();
-    specs = []; epics = []; adrs = []; projects = []; projectId = '';
+    specs = []; epics = []; adrs = []; rules = []; projects = []; projectId = '';
     failedSnapshot = null;
     error = '';
   }
@@ -134,6 +135,7 @@
       specs = state.specs;
       epics = state.epics;
       adrs = state.adrs;
+      rules = state.rules ?? [];
       selectedId = null;
       collapsed = {};
     } catch (reason) {
@@ -168,7 +170,9 @@
       specs = state.specs;
       epics = state.epics;
       adrs = state.adrs;
-      if (selectedId && ![...specs, ...epics, ...adrs].some((item) => item.id === selectedId)) selectedId = null;
+      rules = state.rules ?? [];
+      const items = { specs, epics, adrs, rules }[view];
+      if (selectedId && !items.some((item) => item.id === selectedId)) selectedId = null;
       refreshPending = false;
       error = '';
     } catch (reason) {
@@ -201,7 +205,7 @@
   }
 
   function persist() {
-    const snapshot = JSON.stringify({ specs, epics, adrs });
+    const snapshot = JSON.stringify({ specs, epics, adrs, rules });
     const id = projectId;
     saving = true;
     saveQueue = saveQueue.then(async () => {
@@ -237,6 +241,7 @@
     specs = [...specs];
     epics = [...epics];
     adrs = [...adrs];
+    rules = [...rules];
     persist();
   }
 
@@ -248,16 +253,14 @@
     refresh();
   }
 
-  $: selectedItem = view === 'specs'
-    ? specs.find((item) => item.id === selectedId)
-    : view === 'epics'
-      ? epics.find((item) => item.id === selectedId)
-      : adrs.find((item) => item.id === selectedId);
+  $: selectedItem = { specs, epics, adrs, rules }[view].find((item) => item.id === selectedId);
   $: taskById = new Map(specs.map((spec) => [spec.id, spec]));
   $: visibleSpecs = specs.filter((spec) => matchesSpec(spec, query, stage, epics, adrs, taskById));
   $: visibleEpics = epics.filter((epic) => matchesEntity(epic, query, statusFilter));
   $: visibleAdrs = adrs.filter((adr) => matchesEntity(adr, query, statusFilter));
-  $: counts = { specs: specs.length, epics: epics.length, adrs: adrs.length };
+  $: visibleRules = rules.filter((rule) => matchesEntity(rule, query, statusFilter));
+  $: counts = { specs: specs.length, epics: epics.length, adrs: adrs.length, rules: rules.length };
+  $: ruleSummary = `${RULE_STATUS.map((status) => `${status} ${rules.filter((rule) => rule.s === status).length}`).join(' · ')} · Showing ${visibleRules.length}/${rules.length}`;
   $: statusText = `${Object.entries(STATUS).map(([status, label]) => `${label} ${specs.filter((spec) => spec.s === status).length}`).join(' · ')}  ·  Blocked ${specs.filter((spec) => blocked(spec, adrs, taskById).length).length}  ·  AI active ${specs.filter((spec) => spec.ai).length}  ·  Showing ${visibleSpecs.length}/${specs.length}`;
 
   function changeView(nextView, id = null) {
@@ -266,6 +269,17 @@
     query = '';
     stage = 'all';
     statusFilter = 'all';
+  }
+
+  function createRule() {
+    if (!projectId || loading || saving || failedSnapshot) return;
+    const ids = new Set(rules.map((rule) => rule.id));
+    let number = rules.length + 1;
+    while (ids.has(`RULE-${number}`)) number += 1;
+    const id = `RULE-${number}`;
+    rules = [...rules, { id, t: 'Untitled rule', d: '', s: 'ACTIVE', u: Date.now() }];
+    changeView('rules', id);
+    persist();
   }
 
   function go(id, destination = id.startsWith('EPIC-') ? 'epics' : id.startsWith('ADR-') ? 'adrs' : 'specs') {
@@ -304,7 +318,7 @@
         if (event.key === 'Escape') document.activeElement.blur();
         return;
       }
-      const list = view === 'specs' ? visibleSpecs : view === 'epics' ? visibleEpics : visibleAdrs;
+      const list = { specs: visibleSpecs, epics: visibleEpics, adrs: visibleAdrs, rules: visibleRules }[view];
       const index = list.findIndex((item) => item.id === selectedId);
       if (event.altKey && event.key === 'ArrowUp') {
         event.preventDefault(); reorder(-1);
@@ -355,6 +369,7 @@
   {view} {query} {stage} {statusFilter} {counts}
   {projects} {projectId} busy={loading || saving || !!failedSnapshot}
   onproject={loadProject} oncreateproject={createProject}
+  oncreaterule={createRule}
   onview={changeView}
   onquery={(value) => query = value}
   onstage={(value) => stage = value}
@@ -369,7 +384,7 @@
   </div>
 {/if}
 {#if loading}<div class="backend-message" role="status">Loading project…</div>{/if}
-{#if !loading && projectId && !specs.length && !epics.length && !adrs.length}
+{#if !loading && projectId && view !== 'rules' && !specs.length && !epics.length && !adrs.length && !rules.length}
   <div class="backend-message">This project is empty. Create entities through the API.</div>
 {/if}
 <div class="main" inert={loading || !!failedSnapshot}>
@@ -382,15 +397,16 @@
         ongo={go}
       />
     {:else}
-      <EntityTables {view} epics={visibleEpics} adrs={visibleAdrs} {specs} selected={selectedId} {query} {statusFilter} onselect={(id) => selectedId = id} ongo={go} />
+      <EntityTables {view} {epics} {adrs} rules={visibleRules} {specs} selected={selectedId} {query} {statusFilter}
+        hasRules={rules.length > 0} onselect={(id) => selectedId = id} ongo={go} />
     {/if}
   </div>
   <DetailPanel {view} item={selectedItem} {epics} {adrs} {specs} {taskById} {theme} onclose={() => selectedId = null} onupdate={updateDetail} ongo={go} />
 </div>
 
 <div class="status mono">
-  <span>{view === 'specs' ? statusText : view === 'epics' ? `Open ${epics.filter((item) => item.s === 'OPEN').length} · Closed ${epics.filter((item) => item.s === 'CLOSED').length} · Showing ${visibleEpics.length}/${epics.length}` : `${ADR_STATUS.map((status) => `${status} ${adrs.filter((item) => item.s === status).length}`).join(' · ')} · Showing ${visibleAdrs.length}/${adrs.length}`}</span>
-  <span class="sp"></span><span><kbd>j</kbd><kbd>k</kbd> select</span><span><kbd>Alt</kbd>+<kbd>↑↓</kbd> reorder</span><span><kbd>Esc</kbd> close</span><span role="status">{saving ? 'Saving…' : failedSnapshot ? 'Unsaved changes' : 'SQLite'}</span>
+  <span>{view === 'specs' ? statusText : view === 'epics' ? `Open ${epics.filter((item) => item.s === 'OPEN').length} · Closed ${epics.filter((item) => item.s === 'CLOSED').length} · Showing ${visibleEpics.length}/${epics.length}` : view === 'rules' ? ruleSummary : `${ADR_STATUS.map((status) => `${status} ${adrs.filter((item) => item.s === status).length}`).join(' · ')} · Showing ${visibleAdrs.length}/${adrs.length}`}</span>
+  <span class="sp"></span><span><kbd>j</kbd><kbd>k</kbd> select</span>{#if view === 'specs'}<span><kbd>Alt</kbd>+<kbd>↑↓</kbd> reorder</span>{/if}<span><kbd>Esc</kbd> close</span><span role="status">{saving ? 'Saving…' : failedSnapshot ? 'Unsaved changes' : 'SQLite'}</span>
 </div>
 
 {/if}

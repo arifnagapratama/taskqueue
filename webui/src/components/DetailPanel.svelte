@@ -8,6 +8,7 @@
     DEFAULT_PRIORITY,
     DEFAULT_TASK_KIND,
     EPIC_STATUS,
+    RULE_STATUS,
     STATUS,
     TASK_KINDS,
     blockingAdrs,
@@ -44,12 +45,14 @@
   let openAdrConsequences = true;
   let openAdrSpecs = true;
   let fullscreen = false;
+  let ruleTitleError = false;
   const taskFields = [
     { key: "priority", label: "Priority", fallback: DEFAULT_PRIORITY, pattern: "P(0|[1-9][0-9]*)", hint: "Use P0, P1, P2, or a higher number." },
     { key: "kind", label: "Kind", fallback: DEFAULT_TASK_KIND, pattern: "[a-z][a-z0-9]*(?:-[a-z0-9]+)*", hint: "Use lowercase letters, numbers, and hyphens, starting with a letter." },
   ];
 
   $: if (!item) fullscreen = false;
+  $: if (item?.id) ruleTitleError = false;
 
   onMount(() => {
     const handleFullscreenKey = (event) => {
@@ -122,6 +125,17 @@
 
   function updateTitle(event) {
     item.t = event.currentTarget.value;
+    changed("title changed");
+  }
+
+  function updateRuleTitle(event) {
+    const input = event.currentTarget;
+    const title = input.value.trim();
+    ruleTitleError = !title;
+    if (ruleTitleError) return;
+    input.value = title;
+    if (title === item.t) return;
+    item.t = title;
     changed("title changed");
   }
 
@@ -231,7 +245,7 @@
 </script>
 
 {#if item}
-  <aside class="side open" class:fullscreen aria-label="{view} detail">
+  <aside class="side open" class:fullscreen aria-label={view === "rules" ? "Project rule detail" : `${view} detail`}>
     <div class="sh">
       <span class="id mono">{item.id}</span><span class="sp"></span>
       <Button
@@ -524,36 +538,42 @@
             </ul>
           </div>{/if}
       </div>
-    {:else if view === "epics"}
+    {:else if view === "epics" || view === "rules"}
       <div class="sb">
         <div class="sec">
-          <textarea rows="2"
-            class="title"
-            aria-label="Title"
-            bind:value={item.t}
-            onchange={updateTitle}
-          ></textarea>
+          {#if view === "rules"}
+            {#key item.id}
+              <textarea rows="2" class="title" style="resize: none" aria-label="Rule title"
+                value={item.t} onchange={updateRuleTitle} aria-invalid={ruleTitleError}
+                aria-describedby={ruleTitleError ? "rule-title-error" : undefined}></textarea>
+              {#if ruleTitleError}<p id="rule-title-error" class="blk" role="alert">Enter a rule title.</p>{/if}
+            {/key}
+          {:else}
+            <textarea rows="2" class="title" aria-label="Title" bind:value={item.t} onchange={updateTitle}></textarea>
+          {/if}
           <div class="kv">
-            <span>Status</span><select
+            <span>Status</span><select aria-label={view === "rules" ? "Rule status" : "Epic status"}
               value={item.s}
               onchange={(e) => setStatus(e.currentTarget.value)}
-              >{#each EPIC_STATUS as status}<option value={status}
+              >{#each (view === "rules" ? RULE_STATUS : EPIC_STATUS) as status}<option value={status}
                   >{status}</option
                 >{/each}</select
             ><span>Updated</span><span class="mono">{fmt(item.u)}</span>
           </div>
         </div>
-        <h3>Description</h3>
+        <h3>{view === "rules" ? "Rule" : "Description"}</h3>
         <div class="sec">
-          <MarkdownField
-            value={item.d}
-            label="Edit"
-            {theme}
-            onchange={(value) => {
-              item.d = value;
-              changed("description changed");
-            }}
-          />
+          {#key item.id}
+            <MarkdownField
+              value={item.d}
+              label={view === "rules" ? "Edit rule" : "Edit"}
+              {theme}
+              onchange={(value) => {
+                item.d = value;
+                changed("description changed");
+              }}
+            />
+          {/key}
         </div>
         {#if rollup}<div class="sec">
             <div class="kv mono">

@@ -30,7 +30,8 @@ def transport_security():
 
 
 mcp = FastMCP("Task Queue", stateless_http=True, json_response=True, streamable_http_path="/",
-              instructions="For project-scoped tools, omit project_id when the client sends x-project-id.",
+              instructions="For project-scoped tools, omit project_id when the client sends x-project-id. "
+                           "get_project includes ACTIVE rules that describe project guidance.",
               transport_security=transport_security())
 READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=False)
@@ -83,20 +84,21 @@ def create_project(project_id: str, name: str) -> Annotated[CallToolResult, Resu
 
 @mcp.tool(annotations=READ)
 def get_project(ctx: Context, project_id: str | None = None) -> Annotated[CallToolResult, Result[ProjectState]]:
-    """Read project tasks, epics, ADRs and revision. Defaults to the x-project-id header."""
+    """Read project tasks, epics, ADRs, rules and revision. Defaults to the x-project-id header."""
     def operation():
         selected_id = resolve_project_id(project_id, ctx)
         state = store.get_state(selected_id)
         return ProjectState(project_id=selected_id, tasks=[entity_view("specs", t) for t in state["specs"]],
                             epics=[entity_view("epics", e) for e in state["epics"]],
-                            adrs=[entity_view("adrs", a) for a in state["adrs"]]), state["revision"]
+                            adrs=[entity_view("adrs", a) for a in state["adrs"]],
+                            rules=[entity_view("rules", r) for r in state["rules"]]), state["revision"]
     return respond(Result[ProjectState], operation)
 
 
 @mcp.tool(annotations=WRITE)
 def upsert_entity(entity: EntityInput, revision: int, ctx: Context,
                   project_id: str | None = None) -> Annotated[CallToolResult, Result[Entity]]:
-    """Create or replace task/epic/adr editable fields at an expected project revision.
+    """Create or replace task, epic, ADR, or rule fields at an expected project revision.
 
     Defaults to the x-project-id header. Use the current revision. Task assignment and history are
     server managed; use claim_task, report_test and release_task for AI work.

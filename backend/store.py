@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import get_args
 
 from backend.contracts import (
-    DEFAULT_PRIORITY, DEFAULT_TASK_KIND, PRIORITY_PATTERN, TASK_KIND_PATTERN, TaskStatus,
+    DEFAULT_PRIORITY, DEFAULT_TASK_KIND, PRIORITY_PATTERN, TASK_KIND_PATTERN, RuleStatus, TaskStatus,
 )
 
 DB_PATH = Path(os.environ.get("DATABASE_PATH", "data/task-queue.sqlite3"))
 STATIC_PATH = os.environ.get("STATIC_PATH", "/app/dist")
-KINDS = ("specs", "epics", "adrs")
+KINDS = ("specs", "epics", "adrs", "rules")
 TASK_METADATA = {
     "priority": (DEFAULT_PRIORITY, PRIORITY_PATTERN),
     "kind": (DEFAULT_TASK_KIND, TASK_KIND_PATTERN),
@@ -22,6 +22,7 @@ STATUSES = {
     "specs": get_args(TaskStatus),
     "epics": ("OPEN", "CLOSED"),
     "adrs": ("PROPOSED", "ACCEPTED", "SUPERSEDED", "DEPRECATED"),
+    "rules": get_args(RuleStatus),
 }
 _change_listeners = set()
 
@@ -46,18 +47,31 @@ def initialize():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with connect() as db:
         db.execute("PRAGMA journal_mode=WAL")
-        db.executescript("""
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("""
             CREATE TABLE IF NOT EXISTS projects (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0
             );
+        """)
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+        migrate_entities = version < 2 and db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='entities'"
+        ).fetchone()
+        if migrate_entities:
+            db.execute("ALTER TABLE entities RENAME TO entities_v1")
+        db.execute("""
             CREATE TABLE IF NOT EXISTS entities (
                 project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                kind TEXT NOT NULL CHECK(kind IN ('specs','epics','adrs')),
+                kind TEXT NOT NULL CHECK(kind IN ('specs','epics','adrs','rules')),
                 id TEXT NOT NULL, position INTEGER NOT NULL, payload TEXT NOT NULL,
                 PRIMARY KEY(project_id,kind,id)
             );
-            PRAGMA user_version=1;
         """)
+        if migrate_entities:
+            db.execute("INSERT INTO entities SELECT project_id, kind, id, position, payload FROM entities_v1")
+            db.execute("DROP TABLE entities_v1")
+        if version < 2:
+            db.execute("PRAGMA user_version=2")
         db.execute("INSERT OR IGNORE INTO projects(id,name) VALUES ('default','Default project')")
 
 
@@ -66,7 +80,7 @@ def validate_state(state):
         raise ValueError("Expected a state object")
     indexes = {}
     for kind in KINDS:
-        items = state.get(kind)
+        items = state.get(kind, [] if kind == "rules" else None)
         if not isinstance(items, list):
             raise ValueError(f"{kind} must be an array")
         indexes[kind] = set()
@@ -80,8 +94,8 @@ def validate_state(state):
                 raise ValueError("Each entity needs a title")
             if item.get("s") not in STATUSES[kind]:
                 raise ValueError(f"Invalid {kind} status")
-            text_keys = {"specs": ("d",), "epics": ("d",), "adrs": ("ctx", "dec", "cons")}
-            if any(not isinstance(item.get(key), str) for key in text_keys[kind]):
+            text_keys = ("ctx", "dec", "cons") if kind == "adrs" else ("d",)
+            if any(not isinstance(item.get(key), str) for key in text_keys):
                 raise ValueError("Invalid description fields")
             if kind == "specs":
                 for field, (_, pattern) in TASK_METADATA.items():
@@ -176,6 +190,7 @@ def write_state(db, project_id, state):
     current = read_state(db, project_id)
     if state["revision"] != current["revision"]:
         raise StoreError(409, "Project changed in another session. Reload before editing.")
+    state.setdefault("rules", current["rules"])
     current_tasks = {task["id"]: task for task in current["specs"]}
     for task in state["specs"]:
         task.setdefault("depends_on", current_tasks.get(task["id"], {}).get("depends_on", []))

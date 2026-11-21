@@ -195,7 +195,7 @@ Environment variables: `DATABASE_PATH` (default `data/task-queue.sqlite3`),
 
 Create a project with the UI or `create_project`. Projects start empty;
 sample data can be loaded explicitly through the UI. Agents can list/read
-projects and use `upsert_entity` to create or update tasks, epics and ADRs.
+projects and use `upsert_entity` to create or update tasks, epics, ADRs and project rules.
 Read the project revision before editing: stale writes are rejected.
 Use `claim_task` to start work; unfinished prerequisite tasks, unresolved ADR blockers, existing claims and
 deferred or finished tasks prevent claiming. `report_test` records acceptance results.
@@ -217,9 +217,15 @@ claims without revoking existing ones. Cycles and references to missing tasks
 are rejected. To delete a prerequisite, remove its references first. Omit
 `depends_on` to preserve existing links on update, or pass `[]` to clear them.
 
+Use **Project Rules** to record standing guidance for a project. Rules have a title,
+a Markdown description, and a status of `ACTIVE` or `ARCHIVED`. MCP exposes both
+statuses in `get_project` under `rules`. To add a rule with `upsert_entity`, provide
+`kind: "rule"`, `rule_id`, `title`, and `description`. The default status is `ACTIVE`.
+Set `status: "ARCHIVED"` when a rule stops applying.
+
 MCP uses descriptive field names (`task_id`, `title`, `status`, `description`,
 `blocked_by_adr_ids`, `acceptance_tests`, `assignment`, `history`).
-`upsert_entity` takes `revision` and a typed `entity` with `kind: task | epic | adr`.
+`upsert_entity` takes `revision` and a typed `entity` with `kind: task | epic | adr | rule`.
 Pass `project_id` explicitly or configure the `x-project-id` header.
 Every tool advertises input/output JSON Schema and returns:
 

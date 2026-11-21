@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 TaskStatus = Literal["deferred", "todo", "in_progress", "verify", "finished"]
 ReleaseStatus = Literal["deferred", "todo", "verify", "finished"]
+RuleStatus = Literal["ACTIVE", "ARCHIVED"]
 PRIORITY_PATTERN = r"^P(?:0|[1-9][0-9]*)$"
 TASK_KIND_PATTERN = r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
 DEFAULT_PRIORITY = "P2"
@@ -88,8 +89,20 @@ class Adr(AdrInput):
     updated_at: int
 
 
-EntityInput = Annotated[TaskInput | EpicInput | AdrInput, Field(discriminator="kind")]
-Entity = Annotated[Task | Epic | Adr, Field(discriminator="kind")]
+class RuleInput(Model):
+    kind: Literal["rule"] = "rule"
+    rule_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    description: str = ""
+    status: RuleStatus = "ACTIVE"
+
+
+class Rule(RuleInput):
+    updated_at: int
+
+
+EntityInput = Annotated[TaskInput | EpicInput | AdrInput | RuleInput, Field(discriminator="kind")]
+Entity = Annotated[Task | Epic | Adr | Rule, Field(discriminator="kind")]
 
 
 class Project(Model):
@@ -107,6 +120,7 @@ class ProjectState(Model):
     tasks: list[Task]
     epics: list[Epic]
     adrs: list[Adr]
+    rules: list[Rule]
 
 
 class TestReport(Model):
@@ -139,6 +153,8 @@ def entity_view(kind, item):
     common = {"title": item["t"], "status": item["s"], "updated_at": item.get("u", 0)}
     if kind == "epics":
         return Epic(epic_id=item["id"], description=item["d"], **common)
+    if kind == "rules":
+        return Rule(rule_id=item["id"], description=item["d"], **common)
     if kind == "adrs":
         return Adr(adr_id=item["id"], context=item["ctx"], decision=item["dec"],
                    consequences=item["cons"], supersedes_adr_id=item.get("sup") or None, **common)
@@ -156,6 +172,8 @@ def to_storage(entity):
     common = {"t": entity.title, "s": entity.status}
     if isinstance(entity, EpicInput):
         return "epics", {"id": entity.epic_id, "d": entity.description, **common}
+    if isinstance(entity, RuleInput):
+        return "rules", {"id": entity.rule_id, "d": entity.description, **common}
     if isinstance(entity, AdrInput):
         return "adrs", {"id": entity.adr_id, "ctx": entity.context, "dec": entity.decision,
                         "cons": entity.consequences, "sup": entity.supersedes_adr_id or "", **common}

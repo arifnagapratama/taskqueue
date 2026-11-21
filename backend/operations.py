@@ -18,15 +18,15 @@ def create_project(project_id: str, name: str) -> dict:
 
 
 def get_project(project_id: str) -> dict:
-    """Read tasks in queue order, epics, ADRs and the current project revision."""
+    """Read tasks in queue order, epics, ADRs, rules and the current project revision."""
     return store.get_state(project_id)
 
 
 def upsert_entity(project_id: str, kind: str, entity: dict, revision: int) -> dict:
-    """Create/update a specs, epics or adrs entity using UI field names and an expected revision.
+    """Create or update an entity using UI field names and an expected revision.
 
     Tasks need id,t,s,d,epic,adrs,bl,l,ac,log. Epics need id,t,s,d.
-    ADRs need id,t,s,ctx,dec,cons,sup. Read get_project before writing.
+    ADRs need id,t,s,ctx,dec,cons,sup. Rules need id,t,s,d. Read get_project before writing.
     Use claim_task to start AI work so blockers and existing claims are checked.
     """
     if kind not in store.KINDS:

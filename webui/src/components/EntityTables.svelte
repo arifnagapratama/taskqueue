@@ -2,11 +2,13 @@
   import Button from "../design-system/Button.svelte";
   import Badge from "../design-system/Badge.svelte";
   import Icon from "./Icon.svelte";
-  import { ADR_STATUS, EPIC_STATUS, epicRollup, fmt } from "../lib/helpers.js";
+  import { epicRollup, fmt, matchesEntity } from "../lib/helpers.js";
 
   export let view = "epics";
   export let epics = [];
   export let adrs = [];
+  export let rules = [];
+  export let hasRules = false;
   export let specs = [];
   export let selected = null;
   export let query = "";
@@ -14,21 +16,8 @@
   export let onselect = () => {};
   export let ongo = () => {};
 
-  $: items =
-    view === "epics"
-      ? epics.filter((item) => matches(item, EPIC_STATUS))
-      : adrs.filter((item) => matches(item, ADR_STATUS));
-  function matches(item) {
-    if (statusFilter !== "all" && item.s !== statusFilter) return false;
-    const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
-    return terms.every((term) => {
-      const match = term.match(/^([a-z]+):(.*)$/);
-      if (match?.[1] === "status") return item.s.includes(match[2]);
-      return `${item.id} ${item.t}`
-        .toLowerCase()
-        .includes(match ? match[2] : term);
-    });
-  }
+  $: items = view === "rules" ? rules : (view === "epics" ? epics : adrs)
+    .filter((item) => matchesEntity(item, query, statusFilter));
 </script>
 
 {#if view === "epics"}
@@ -75,7 +64,7 @@
       {/each}
     </tbody>
   </table>
-{:else}
+{:else if view === "adrs"}
   <table id="tblA">
     <colgroup
       ><col style="width:116px" /><col style="width:320px" /><col style="width:168px" /><col
@@ -137,5 +126,28 @@
       {/each}
     </tbody>
   </table>
+{:else}
+  <table id="tblR" aria-label="Project Rules">
+    <colgroup>
+      <col class="rule-id-col" /><col /><col class="rule-status-col" /><col class="rule-updated" />
+    </colgroup>
+    <thead><tr><th>ID</th><th>Rule</th><th>Status</th><th class="rule-updated">Updated</th></tr></thead>
+    <tbody>
+      {#each items as rule (rule.id)}
+        <tr class="row" class:sel={selected === rule.id}>
+          <td class="mono" title={rule.id}>{rule.id}</td>
+          <td>
+            <Button variant="unstyled" class="rule-title" title={rule.t}
+              aria-current={selected === rule.id ? "true" : undefined}
+              onclick={() => onselect(rule.id)}>{rule.t}</Button>
+          </td>
+          <td><Badge tone={rule.s === "ACTIVE" ? "success" : "neutral"}>{rule.s}</Badge></td>
+          <td class="mono lbl rule-updated" title={fmt(rule.u)}>{fmt(rule.u)}</td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
 {/if}
-{#if !items.length}<div class="empty">No {view} match the filter.</div>{/if}
+{#if !items.length}
+  <div class="empty">{view === "rules" && !hasRules ? "No project rules yet." : `No ${view} match the filter.`}</div>
+{/if}
